@@ -25,8 +25,13 @@ As fases são geradas na hora e ficam maiores a cada nível. O gerador garante q
 
 - `index.html`: página e telas (início, fase concluída, fim de jogo, pausa)
 - `style.css`: visual
-- `game.js`: gerador de labirinto, regras, desenho no canvas, sons sintetizados com Web Audio e controles
+- `game.js`: gerador de labirinto, regras, desenho no canvas, sons e controles
 - `assets/`: carinhas do Krug recortadas das fotos, fotos das telas e ícones
+- `assets/sons/`: latidos de verdade do Krug, recortados de uma gravação
+
+## Sons
+
+Os latidos são do próprio Krug. Ele late no começo de cada fase, late duas vezes ao chegar à tigela de papá, dá um latido mais agudo quando leva um susto do má banho e um latido mais grave quando, corajoso, espanta o banho. Na tela inicial, tocar na tampinha faz o Krug latir. Os demais efeitos são sintetizados com Web Audio.
 
 Não há etapa de build nem dependências: basta servir a pasta como site estático.
 

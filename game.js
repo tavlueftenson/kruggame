@@ -58,16 +58,62 @@
   ]);
 
   // ---------------------------------------------------------------------------
-  // Sons sintetizados (Web Audio, sem arquivos)
+  // Sons: latidos gravados do Krug e efeitos sintetizados com Web Audio
   // ---------------------------------------------------------------------------
+  const BARK_SINGLE = ['latido-1', 'latido-2', 'latido-3', 'latido-4', 'latido-5', 'latido-6'];
+  const BARK_FILES = BARK_SINGLE.concat('latido-duplo');
+  const barkRaw = {};
+  const barkFetch = Promise.all(BARK_FILES.map((n) => fetch('assets/sons/' + n + '.mp3')
+    .then((r) => (r.ok ? r.arrayBuffer() : null))
+    .then((b) => { barkRaw[n] = b; })
+    .catch(() => { /* sem o arquivo, usa o latido sintetizado */ })));
+
   const Snd = {
     ac: null,
     on: store.get('sound', true),
-    init() {
+    buf: {},
+    decoding: false,
+    lastBark: -1,
+    init(fromGesture = true) {
+      if (fromGesture) this.gesture = true;
       if (!this.ac) {
         try { this.ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { this.ac = null; }
       }
-      if (this.ac && this.ac.state === 'suspended') this.ac.resume();
+      if (this.ac && this.ac.state === 'suspended' && this.gesture) {
+        try { const r = this.ac.resume(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* ignora */ }
+      }
+      if (this.ac && !this.decoding) {
+        this.decoding = true;
+        barkFetch.then(() => BARK_FILES.forEach((n) => {
+          if (!barkRaw[n]) return;
+          const done = (b) => { if (b) this.buf[n] = b; };
+          try {
+            const p = this.ac.decodeAudioData(barkRaw[n].slice(0), done, () => {});
+            if (p && p.catch) p.catch(() => {});
+          } catch (e) { /* formato não suportado */ }
+        }));
+      }
+    },
+    /** Toca um latido gravado; rate acima de 1 deixa mais agudo (susto), abaixo de 1 mais grave (valente). */
+    play(name, { delay = 0, rate = 1, vol = 0.9 } = {}) {
+      if (!this.on || !this.ac) return false;
+      const b = this.buf[name];
+      if (!b) return false;
+      const t = this.ac.currentTime + delay;
+      const src = this.ac.createBufferSource();
+      src.buffer = b;
+      src.playbackRate.value = rate;
+      const g = this.ac.createGain();
+      g.gain.value = vol;
+      src.connect(g).connect(this.ac.destination);
+      src.start(t);
+      return true;
+    },
+    randomBark() {
+      let i = (Math.random() * BARK_SINGLE.length) | 0;
+      if (i === this.lastBark) i = (i + 1) % BARK_SINGLE.length;
+      this.lastBark = i;
+      return BARK_SINGLE[i];
     },
     tone(freq, dur, type = 'sine', vol = 0.15, slideTo = null, delay = 0) {
       if (!this.on || !this.ac) return;
@@ -102,7 +148,15 @@
       src.connect(f).connect(g).connect(this.ac.destination);
       src.start(t);
     },
-    bark(delay = 0) {
+    bark(delay = 0, opts = {}) {
+      if (this.play(this.randomBark(), { delay, ...opts })) return;
+      this.synthBark(delay);
+    },
+    doubleBark(delay = 0) {
+      if (this.play('latido-duplo', { delay })) return;
+      this.synthBark(delay);
+    },
+    synthBark(delay = 0) {
       if (!this.on || !this.ac) return;
       [0, 0.2].forEach((d) => {
         const t = this.ac.currentTime + delay + d;
@@ -123,14 +177,23 @@
       this.noise(0.05, 0.12, 1800, delay + 0.2);
     },
     popoca() { this.noise(0.05, 0.35, 2600, 0, 2); this.tone(1100, 0.05, 'square', 0.04, 1600); },
-    pao() { [523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.14, 'triangle', 0.14, null, i * 0.07)); },
+    pao() {
+      [523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.14, 'triangle', 0.14, null, i * 0.07));
+      this.play(this.randomBark(), { delay: 0.3, rate: 1.12, vol: 0.7 });
+    },
     bath() {
       this.noise(0.5, 0.25, 700, 0, 0.7);
       this.tone(520, 0.55, 'sine', 0.18, 140);
       this.tone(360, 0.4, 'triangle', 0.08, 120, 0.1);
+      // Latido agudo de susto
+      this.play(this.randomBark(), { delay: 0.05, rate: 1.5, vol: 0.75 });
     },
-    scare() { this.noise(0.25, 0.25, 900, 0, 0.8); this.tone(300, 0.2, 'square', 0.06, 900); },
-    bowl() { [523, 659, 784, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.16, 'triangle', 0.15, null, i * 0.1)); this.bark(0.65); },
+    scare() {
+      // Latido grave e valente: agora quem foge é o banho
+      if (!this.play(this.randomBark(), { rate: 0.82, vol: 1 })) this.synthBark();
+      this.noise(0.25, 0.2, 900, 0.12, 0.8);
+    },
+    bowl() { [523, 659, 784, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.16, 'triangle', 0.15, null, i * 0.1)); this.doubleBark(0.65); },
     bump() { this.tone(130, 0.07, 'square', 0.05, 90); },
     over() { [392, 349, 311, 262].forEach((f, i) => this.tone(f, 0.3, 'triangle', 0.14, null, i * 0.22)); },
   };
@@ -1150,6 +1213,14 @@
   }
 
   $('#btn-play').addEventListener('click', () => { Snd.init(); newGame(); });
+  $('#title-cap').addEventListener('pointerdown', (e) => {
+    Snd.init();
+    const c = e.currentTarget;
+    c.classList.remove('wiggle');
+    void c.offsetWidth;
+    c.classList.add('wiggle');
+    setTimeout(() => Snd.bark(), 30);
+  });
   $('#btn-again').addEventListener('click', () => { Snd.init(); newGame(); });
   $('#btn-next').addEventListener('click', () => { Snd.init(); nextLevel(); });
   $('#btn-pause').addEventListener('click', () => { if (S.mode === 'play') pause(); else resume(); });
@@ -1194,6 +1265,7 @@
   }
 
   function boot() {
+    Snd.init(false); // já decodifica os latidos; o som só liga no primeiro toque
     layout();
     updateHud();
     updateSoundBtn();
@@ -1205,5 +1277,5 @@
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (L) render(); });
 
   // Acesso para testes automatizados
-  window.__krug = { S, K, get L() { return L; }, input, newGame, nextLevel, buildLevel, CFG, drawCap, IMG };
+  window.__krug = { S, K, get L() { return L; }, input, newGame, nextLevel, buildLevel, CFG, drawCap, IMG, Snd };
 })();

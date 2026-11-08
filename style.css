@@ -169,3 +169,12 @@ h2 { margin: 10px 0 4px; font-size: 1.8rem; line-height: 1.1; color: var(--teal-
 }
 .btn:active { transform: translateY(3px); box-shadow: 0 2px 0 var(--red-dark); }
 .btn.secondary { background: var(--teal-dark); box-shadow: 0 5px 0 var(--teal-deep); font-size: 1.05rem; }
+
+.title-cap { cursor: pointer; }
+.title-cap.wiggle { animation: wiggle .45s ease-in-out; }
+@keyframes wiggle {
+  0%, 100% { transform: rotate(0) scale(1); }
+  25% { transform: rotate(-12deg) scale(1.06); }
+  50% { transform: rotate(10deg) scale(1.06); }
+  75% { transform: rotate(-5deg) scale(1.02); }
+}
