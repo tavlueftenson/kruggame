@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#1f8f84">
+  <meta name="description" content="Leve o Krug até a tigela de papá, fugindo do má banho e comendo pão do queijo e popoca.">
+  <title>The Game of Krug</title>
+  <link rel="icon" href="assets/icon-192.png">
+  <link rel="apple-touch-icon" href="assets/icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Krug">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header id="hud">
+      <div class="hud-left">
+        <span class="hud-label">Fase</span>
+        <span id="hud-level" class="hud-value">1</span>
+      </div>
+      <div class="hud-mid">
+        <span id="hud-score" class="hud-value">0</span>
+        <span class="hud-label">pontos</span>
+      </div>
+      <div class="hud-right">
+        <span id="hud-lives" aria-label="Patinhas"></span>
+        <button id="btn-sound" class="icon-btn" aria-label="Ligar ou desligar o som"></button>
+        <button id="btn-pause" class="icon-btn" aria-label="Pausar">
+          <svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1.5"/><rect x="14" y="5" width="4" height="14" rx="1.5"/></svg>
+        </button>
+      </div>
+      <div id="courage" aria-hidden="true"><div id="courage-bar"></div></div>
+    </header>
+
+    <main id="stage">
+      <canvas id="game" aria-label="Labirinto do Krug"></canvas>
+    </main>
+
+    <nav id="dpad" aria-label="Direcional">
+      <button data-dir="up" aria-label="Para cima"><svg viewBox="0 0 24 24"><path d="M12 6l7 9H5z"/></svg></button>
+      <button data-dir="left" aria-label="Para a esquerda"><svg viewBox="0 0 24 24"><path d="M6 12l9-7v14z"/></svg></button>
+      <button data-dir="right" aria-label="Para a direita"><svg viewBox="0 0 24 24"><path d="M18 12l-9 7V5z"/></svg></button>
+      <button data-dir="down" aria-label="Para baixo"><svg viewBox="0 0 24 24"><path d="M12 18l-7-9h14z"/></svg></button>
+    </nav>
+  </div>
+
+  <!-- Tela inicial -->
+  <section id="screen-start" class="overlay">
+    <div class="card">
+      <h1>The Game of Krug</h1>
+      <canvas id="title-cap" class="title-cap" width="140" height="140"></canvas>
+      <p class="lead">Leve o Krug até a <strong>tigela de papá</strong>!</p>
+      <ul class="legend">
+        <li><canvas data-icon="bowl"></canvas><span><strong>Tigela de papá</strong> é o objetivo de cada fase.</span></li>
+        <li><canvas data-icon="popoca"></canvas><span><strong>Popoca</strong> vale 10 pontos.</span></li>
+        <li><canvas data-icon="pao"></canvas><span><strong>Pão do queijo</strong> vale 50 pontos e deixa o Krug corajoso por alguns segundos.</span></li>
+        <li><canvas data-icon="bath"></canvas><span><strong>Má banho</strong> dá medo: o Krug perde uma patinha e volta ao começo.</span></li>
+      </ul>
+      <p class="hint" id="controls-hint">Use as setas do teclado (ou W A S D). A tampinha rola pelo corredor e para no próximo cruzamento.</p>
+      <button class="btn" id="btn-play">Jogar</button>
+      <p class="record" id="start-record"></p>
+    </div>
+  </section>
+
+  <!-- Fase concluída -->
+  <section id="screen-level" class="overlay hidden">
+    <div class="card">
+      <img class="photo" src="assets/foto-fase.jpg" alt="Krug sentado na poltrona">
+      <h2>Papá!</h2>
+      <p id="level-text"></p>
+      <p class="bonus" id="level-bonus"></p>
+      <button class="btn" id="btn-next">Próxima fase</button>
+    </div>
+  </section>
+
+  <!-- Fim de jogo -->
+  <section id="screen-over" class="overlay hidden">
+    <div class="card">
+      <img class="photo" id="over-photo" src="assets/foto-fim.jpg" alt="Krug dormindo no sofá">
+      <h2 id="over-title">O Krug cansou...</h2>
+      <p id="over-text"></p>
+      <p class="bonus" id="over-record"></p>
+      <button class="btn" id="btn-again">Jogar de novo</button>
+    </div>
+  </section>
+
+  <!-- Pausa -->
+  <section id="screen-pause" class="overlay hidden">
+    <div class="card small">
+      <h2>Pausado</h2>
+      <button class="btn" id="btn-resume">Continuar</button>
+      <button class="btn secondary" id="btn-restart">Recomeçar do zero</button>
+    </div>
+  </section>
+
+  <script src="game.js"></script>
+</body>
+</html>
