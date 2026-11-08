@@ -913,9 +913,18 @@
   const same = (a, b) => a && b && a[0] === b[0] && a[1] === b[1];
   const opposite = (a, b) => a && b && a[0] === -b[0] && a[1] === -b[1];
 
+  /** Para o Krug na próxima casa (o movimento é de casa em casa). */
+  function stop() {
+    Snd.init();
+    if (S.mode !== 'play') return;
+    K.queue = null;
+    if (K.moving) K.stopReq = true;
+  }
+
   function input(name) {
     Snd.init();
     if (S.mode !== 'play') return;
+    K.stopReq = false;
     const d = DIRS[name];
     if (!d || K.scaredT > 0) return;
     if (!K.moving) {
@@ -932,22 +941,28 @@
     } else if (same(d, K.dir)) {
       K.queue = null;
     } else {
-      K.queue = d; // vira no próximo cruzamento em que der
+      K.queue = d; // vira na primeira casa em que essa direção estiver livre
     }
   }
 
-  /** Decide o que fazer ao chegar numa casa: virar, seguir o corredor ou parar. */
+  /**
+   * Decide o que fazer ao chegar numa casa: se o jogador escolheu outra direção
+   * e ela está livre aqui, vira; senão segue reto até bater na parede.
+   */
   function decide() {
-    if (K.queue) {
-      const q = K.queue;
-      if (isOpen(K.cx, K.cy, q)) { K.queue = null; return q; }
+    if (K.stopReq) {
+      K.stopReq = false;
+      K.queue = null;
+      return null;
     }
-    const open = D4.filter((d) => isOpen(K.cx, K.cy, d));
-    if (open.length >= 3) { K.queue = null; return null; }        // cruzamento: para
-    const forward = open.filter((d) => !opposite(d, K.dir));
-    if (forward.length === 1) return forward[0];                 // corredor ou curva: segue
+    if (K.queue && isOpen(K.cx, K.cy, K.queue)) {
+      const q = K.queue;
+      K.queue = null;
+      return q;
+    }
+    if (isOpen(K.cx, K.cy, K.dir)) return K.dir;
     K.queue = null;
-    return null;                                                 // beco: para
+    return null;
   }
 
   function arrive() {
@@ -1086,7 +1101,7 @@
     L = buildLevel(S.level);
     Object.assign(K, {
       cx: L.start.x, cy: L.start.y, x: L.start.x, y: L.start.y, dir: null, prog: 0, moving: false,
-      queue: null, angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0, saved: false,
+      queue: null, angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0, saved: false, stopReq: false,
     });
     particles.length = 0;
     floaters.length = 0;
@@ -1415,6 +1430,10 @@
       input(KEYMAP[e.key]);
       return;
     }
+    if (e.key === ' ' || e.key === 'Spacebar') {
+      if (S.mode === 'play') { e.preventDefault(); stop(); }
+      return;
+    }
     if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
       if (S.mode === 'play') pause(); else if (S.mode === 'paused') resume();
     }
@@ -1424,7 +1443,7 @@
   let swipe = null;
   stage.addEventListener('pointerdown', (e) => {
     Snd.init();
-    swipe = { x: e.clientX, y: e.clientY, id: e.pointerId };
+    swipe = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now(), id: e.pointerId, moved: false };
     try { stage.setPointerCapture(e.pointerId); } catch (err) { /* ignora */ }
   });
   stage.addEventListener('pointermove', (e) => {
@@ -1434,18 +1453,24 @@
     if (Math.abs(dx) < th && Math.abs(dy) < th) return;
     if (Math.abs(dx) > Math.abs(dy)) input(dx > 0 ? 'right' : 'left');
     else input(dy > 0 ? 'down' : 'up');
+    swipe.moved = true;
     swipe.x = e.clientX;
     swipe.y = e.clientY;
   });
   const endSwipe = () => { swipe = null; };
-  stage.addEventListener('pointerup', endSwipe);
+  stage.addEventListener('pointerup', (e) => {
+    // Toque rápido sem arrastar: para o Krug
+    if (swipe && !swipe.moved && performance.now() - swipe.t0 < 300
+      && Math.hypot(e.clientX - swipe.x0, e.clientY - swipe.y0) < 12) stop();
+    endSwipe();
+  });
   stage.addEventListener('pointercancel', endSwipe);
 
   document.querySelectorAll('#dpad button').forEach((b) => {
     b.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       b.classList.add('pressed');
-      input(b.dataset.dir);
+      if (b.dataset.dir === 'stop') stop(); else input(b.dataset.dir);
     });
     const up = () => b.classList.remove('pressed');
     b.addEventListener('pointerup', up);
@@ -1457,7 +1482,7 @@
   if (isTouch) {
     CFG.minTile = 30;
     document.documentElement.classList.add('touch');
-    $('#controls-hint').textContent = 'Deslize o dedo na tela ou use o direcional. A tampinha rola pelo corredor e para no próximo cruzamento.';
+    $('#controls-hint').textContent = 'Deslize o dedo na tela ou use o direcional. A tampinha rola reto até bater na parede; escolha outra direção e ela vira assim que puder. Para parar, use o botão do meio ou dê um toque rápido no labirinto.';
   }
 
   $('#btn-play').addEventListener('click', () => { Snd.init(); newGame(); });
@@ -1526,5 +1551,5 @@
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (L) render(); });
 
   // Acesso para testes automatizados
-  window.__krug = { S, K, get L() { return L; }, input, newGame, nextLevel, buildLevel, CFG, drawCap, IMG, Snd };
+  window.__krug = { S, K, get L() { return L; }, input, stop, newGame, nextLevel, buildLevel, CFG, drawCap, IMG, Snd };
 })();

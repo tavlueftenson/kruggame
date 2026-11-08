@@ -6,9 +6,9 @@ Jogo web de labirinto visto de cima. O jogador conduz a tampinha de refrigerante
 
 ## Como jogar
 
-- **Computador:** setas do teclado ou W A S D. P ou Esc pausa.
-- **Celular:** deslize o dedo na tela ou use o direcional. Dá para virar várias vezes sem tirar o dedo da tela.
-- A tampinha rola pelo corredor, faz as curvas sozinha e para no próximo cruzamento ou beco. Se você escolher uma direção antes do cruzamento, ela vira assim que puder.
+- **Computador:** setas do teclado ou W A S D. Barra de espaço para o Krug. P ou Esc pausa.
+- **Celular:** deslize o dedo na tela ou use o direcional. Dá para virar várias vezes sem tirar o dedo da tela. Para parar, use o botão vermelho do meio do direcional ou dê um toque rápido no labirinto.
+- A tampinha rola reto na direção escolhida até bater numa parede, passando direto pelos cruzamentos. Se você escolher outra direção no caminho, ela vira na primeira casa em que essa direção estiver livre. A direção oposta faz meia-volta na hora. Ao pedir para parar, ele para na próxima casa.
 
 | Item | Efeito |
 | --- | --- |

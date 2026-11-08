@@ -86,8 +86,8 @@ html, body {
 .touch #dpad {
   display: grid;
   grid-template-columns: repeat(3, 58px);
-  grid-template-rows: repeat(2, 46px);
-  grid-template-areas: ". up ." "left down right";
+  grid-template-rows: repeat(3, 42px);
+  grid-template-areas: ". up ." "left stop right" ". down .";
   justify-content: center;
   gap: 6px;
   padding: 8px 0 10px;
@@ -105,6 +105,9 @@ html, body {
 #dpad [data-dir="left"] { grid-area: left; }
 #dpad [data-dir="right"] { grid-area: right; }
 #dpad [data-dir="down"] { grid-area: down; }
+#dpad [data-dir="stop"] { grid-area: stop; background: rgba(230, 57, 70, .55); }
+#dpad [data-dir="stop"]:active, #dpad [data-dir="stop"].pressed { background: rgba(230, 57, 70, .85); }
+#dpad [data-dir="stop"] svg { width: 20px; height: 20px; }
 
 /* ---------- Telas sobrepostas ---------- */
 .overlay {
