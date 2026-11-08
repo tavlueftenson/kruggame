@@ -14,7 +14,9 @@
   // Configuração
   // ---------------------------------------------------------------------------
   const CFG = {
-    speed: 8.5,          // casas por segundo da tampinha
+    speed: 7,            // casas por segundo da tampinha
+    lateTurn: 0.45,      // tolerância (em casas) para virar logo depois de passar do cruzamento
+    queueTime: 0.5,      // segundos que uma direção escolhida antes da hora fica guardada
     lives: 3,
     braveTime: 7,        // segundos de coragem depois do pão do queijo
     scaredTime: 1.1,     // segundos tremendo depois do má banho
@@ -399,7 +401,7 @@
 
     // Tempo para a terceira estrela: folgado em relação ao caminho mais curto
     const dPar = bfs(m, 1, 1, blocked);
-    const par = Math.ceil((dPar[goalIdx] / CFG.speed) * 2.2 + 6);
+    const par = Math.ceil((dPar[goalIdx] / CFG.speed) * 1.8 + 5);
 
     return {
       n, m, W, H, g: m.g, start: { x: 1, y: 1 },
@@ -425,7 +427,7 @@
   };
   let L = null;             // fase atual
   const K = {               // a tampinha do Krug
-    cx: 1, cy: 1, x: 1, y: 1, dir: null, prog: 0, moving: false, queue: null,
+    cx: 1, cy: 1, x: 1, y: 1, dir: null, prog: 0, moving: false, queue: null, queueT: 0,
     angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0, bumpDir: [0, 0], shield: false, shieldPop: 0,
   };
   const particles = [];
@@ -823,6 +825,26 @@
     ctx.restore();
   }
 
+  /** Setinha amarela mostrando a direção já escolhida. */
+  function drawQueueArrow(g, x, y, R, d, t) {
+    const ang = Math.atan2(d[1], d[0]);
+    const off = R * (1.25 + Math.sin(t * 14) * 0.08);
+    g.save();
+    g.translate(x, y);
+    g.rotate(ang);
+    g.fillStyle = '#ffe08a';
+    g.strokeStyle = 'rgba(60,30,10,.8)';
+    g.lineWidth = Math.max(1.5, R * 0.1);
+    g.beginPath();
+    g.moveTo(off + R * 0.5, 0);
+    g.lineTo(off, -R * 0.42);
+    g.lineTo(off, R * 0.42);
+    g.closePath();
+    g.stroke();
+    g.fill();
+    g.restore();
+  }
+
   const STAR_SVG = '<svg viewBox="0 0 24 24"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></svg>';
 
   function roundRect(g, x, y, w, h, r) {
@@ -940,8 +962,15 @@
       K.queue = null;
     } else if (same(d, K.dir)) {
       K.queue = null;
+    } else if (K.prog <= CFG.lateTurn && isOpen(K.cx, K.cy, d)) {
+      // Tocou um pouco tarde: volta o pedacinho e vira no cruzamento que acabou de passar
+      K.prog = 0;
+      K.dir = d;
+      K.queue = null;
     } else {
-      K.queue = d; // vira na primeira casa em que essa direção estiver livre
+      // Tocou cedo: guarda a direção por pouco tempo e vira na primeira casa em que der
+      K.queue = d;
+      K.queueT = CFG.queueTime;
     }
   }
 
@@ -1256,6 +1285,7 @@
       S.levelTime += dt;
       if (K.braveT > 0) K.braveT = Math.max(0, K.braveT - dt);
       if (K.shieldPop > 0) K.shieldPop = Math.max(0, K.shieldPop - dt);
+      if (K.queue) { K.queueT -= dt; if (K.queueT <= 0) K.queue = null; }
       if (K.invulnT > 0) K.invulnT = Math.max(0, K.invulnT - dt);
       stepKrug(dt);
       stepBaths(dt);
@@ -1337,6 +1367,7 @@
     const scale = S.mode === 'levelDone' ? 1 + Math.sin(t * 10) * 0.06 : 1;
     if (K.shield) drawWrap(ctx, kx, ky, TS * 0.47 * scale * (1 + K.shieldPop * 0.6), t);
     drawCap(ctx, kx, ky, TS * 0.47 * scale, K.angle, face, { glow: braveBlink });
+    if (K.queue && K.moving) drawQueueArrow(ctx, kx, ky, TS * 0.47, K.queue, t);
     ctx.restore();
 
     // Partículas
