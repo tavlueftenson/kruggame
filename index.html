@@ -29,6 +29,7 @@
         <span class="hud-label">pontos</span>
       </div>
       <div class="hud-right">
+        <span id="hud-shield" title="Cobertinha" aria-label="Cobertinha guardada"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2.5"/><path d="M8 6v12M14 6v12M3 10h18M3 14h18" stroke="#1f8f84" stroke-width="1.6" opacity=".45"/></svg></span>
         <span id="hud-lives" aria-label="Patinhas"></span>
         <button id="btn-sound" class="icon-btn" aria-label="Ligar ou desligar o som"></button>
         <button id="btn-pause" class="icon-btn" aria-label="Pausar">
@@ -60,8 +61,10 @@
         <li><canvas data-icon="bowl"></canvas><span><strong>Tigela de papá</strong> é o objetivo de cada fase.</span></li>
         <li><canvas data-icon="popoca"></canvas><span><strong>Popoca</strong> vale 10 pontos.</span></li>
         <li><canvas data-icon="pao"></canvas><span><strong>Pão do queijo</strong> vale 50 pontos e deixa o Krug corajoso por alguns segundos.</span></li>
+        <li><canvas data-icon="coberta"></canvas><span><strong>Cobertinha</strong> protege o Krug de um má banho.</span></li>
         <li><canvas data-icon="bath"></canvas><span><strong>Má banho</strong> dá medo: o Krug perde uma patinha e volta ao começo.</span></li>
       </ul>
+      <p class="hint">Cada fase vale até 3 estrelas: chegar à tigela, comer todas as popocas e chegar dentro do tempo. A cada 5 fases o Krug muda de cômodo.</p>
       <p class="hint" id="controls-hint">Use as setas do teclado (ou W A S D). A tampinha rola pelo corredor e para no próximo cruzamento.</p>
       <button class="btn" id="btn-play">Jogar</button>
       <p class="record" id="start-record"></p>
@@ -71,9 +74,11 @@
   <!-- Fase concluída -->
   <section id="screen-level" class="overlay hidden">
     <div class="card">
-      <img class="photo" src="assets/foto-fase.jpg" alt="Krug sentado na poltrona">
+      <img class="photo short" src="assets/foto-fase.jpg" alt="Krug sentado na poltrona">
       <h2>Papá!</h2>
+      <div class="stars" id="level-stars"></div>
       <p id="level-text"></p>
+      <ul class="star-list" id="star-list"></ul>
       <p class="bonus" id="level-bonus"></p>
       <button class="btn" id="btn-next">Próxima fase</button>
     </div>

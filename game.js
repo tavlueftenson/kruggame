@@ -22,7 +22,7 @@
     minTile: 24,         // tamanho mínimo da casa em pixels CSS
     maxTile: 64,
     hitRadius: 0.62,     // distância (em casas) para encostar no banho
-    pts: { popoca: 10, pao: 50, bathScared: 30, bowl: 100 },
+    pts: { popoca: 10, pao: 50, bathScared: 30, bowl: 100, coberta: 20, star: 50 },
   };
 
   const D4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
@@ -195,6 +195,9 @@
     },
     bowl() { [523, 659, 784, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.16, 'triangle', 0.15, null, i * 0.1)); this.doubleBark(0.65); },
     bump() { this.tone(130, 0.07, 'square', 0.05, 90); },
+    coberta() { this.noise(0.18, 0.18, 600, 0, 0.6); [392, 523].forEach((f, i) => this.tone(f, 0.16, 'sine', 0.12, null, i * 0.08)); },
+    shieldHit() { this.noise(0.4, 0.22, 700, 0, 0.7); this.tone(440, 0.25, 'sine', 0.12, 300); this.bark(0.25); },
+    star(delay, i) { this.tone(880 + i * 220, 0.18, 'triangle', 0.14, null, delay); this.tone(1320 + i * 330, 0.12, 'sine', 0.07, null, delay + 0.05); },
     over() { [392, 349, 311, 262].forEach((f, i) => this.tone(f, 0.3, 'triangle', 0.14, null, i * 0.22)); },
   };
 
@@ -308,14 +311,26 @@
       if (r > 0.15 && r < 0.9) { items.set(c, 'pao'); paoIdx.push(c); }
     }
 
+    // Cobertinha: a partir da fase 2, protege de um toque do má banho
+    const nCob = n >= 2 ? (n >= 8 ? 2 : 1) : 0;
+    const cobIdx = [];
+    for (const c of pool) {
+      if (cobIdx.length >= nCob) break;
+      if (items.has(c)) continue;
+      const r = d0[c] / maxD;
+      if (r > 0.1 && r < 0.85) { items.set(c, 'coberta'); cobIdx.push(c); }
+    }
+    const must = paoIdx.concat(cobIdx);
+    const theme = themeFor(n);
+
     // Má banho parado: nunca pode bloquear todos os caminhos
     const blocked = new Set();
     const pathOk = () => {
       const d = bfs(m, 1, 1, blocked);
-      return d[goalIdx] >= 0 && paoIdx.every((p) => d[p] >= 0);
+      return d[goalIdx] >= 0 && must.every((p) => d[p] >= 0);
     };
     const baths = [];
-    const nStatic = Math.min(1 + Math.floor(n * 0.8), 16);
+    const nStatic = Math.min(Math.round((1 + Math.floor(n * 0.8)) * (theme.key === 'banheiro' ? 1.4 : 1)), 22);
     for (const c of shuffle(cells.slice())) {
       if (baths.length >= nStatic) break;
       if (c === goalIdx || items.has(c) || d0[c] < 4) continue;
@@ -382,10 +397,14 @@
       pc++;
     }
 
+    // Tempo para a terceira estrela: folgado em relação ao caminho mais curto
+    const dPar = bfs(m, 1, 1, blocked);
+    const par = Math.ceil((dPar[goalIdx] / CFG.speed) * 2.2 + 6);
+
     return {
       n, m, W, H, g: m.g, start: { x: 1, y: 1 },
       goal: { x: goalIdx % W, y: (goalIdx / W) | 0 },
-      items, baths, idx,
+      items, baths, idx, theme, par, popTotal: pc,
     };
   }
 
@@ -400,12 +419,14 @@
     best: store.get('best', 0),
     bestLevel: store.get('bestLevel', 0),
     time: 0,
+    levelTime: 0,
+    stars: 0,
     banner: null,
   };
   let L = null;             // fase atual
   const K = {               // a tampinha do Krug
     cx: 1, cy: 1, x: 1, y: 1, dir: null, prog: 0, moving: false, queue: null,
-    angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0, bumpDir: [0, 0],
+    angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0, bumpDir: [0, 0], shield: false, shieldPop: 0,
   };
   const particles = [];
   const floaters = [];
@@ -444,21 +465,13 @@
     cam.y += (ty - cam.y) * k;
   }
 
-  // Chão de madeira e paredes de almofada verde-água (como o puff do Krug)
-  function buildStaticLayer() {
-    const c = document.createElement('canvas');
-    c.width = Math.ceil(L.W * TS * dpr);
-    c.height = Math.ceil(L.H * TS * dpr);
-    const g = c.getContext('2d');
-    g.scale(dpr, dpr);
-    const W = L.W, H = L.H, s = TS;
-
-    // Chão
+  // ---------------------------------------------------------------------------
+  // Cômodos: o cenário muda a cada 5 fases (sala, quarto, cozinha, banheiro)
+  // ---------------------------------------------------------------------------
+  function floorWood(g, W, H, s, rnd) {
     g.fillStyle = '#c99a6b';
     g.fillRect(0, 0, W * s, H * s);
     const ph = s * 0.5;
-    let seed = 7;
-    const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
     for (let y = 0; y < H * s; y += ph) {
       let x = -rnd() * s * 2;
       while (x < W * s) {
@@ -473,40 +486,130 @@
       g.fillStyle = 'rgba(90,55,25,.22)';
       g.fillRect(0, y, W * s, 1);
     }
+  }
+
+  function floorCarpet(g, W, H, s, rnd) {
+    g.fillStyle = '#e9dcc8';
+    g.fillRect(0, 0, W * s, H * s);
+    // Tapete felpudo: pontinhos claros e escuros
+    const n = Math.round(W * H * 14);
+    for (let i = 0; i < n; i++) {
+      g.fillStyle = rnd() < 0.5 ? 'rgba(120,90,60,.10)' : 'rgba(255,255,255,.35)';
+      g.fillRect(rnd() * W * s, rnd() * H * s, Math.max(1, s * 0.05), Math.max(1, s * 0.05));
+    }
+    // Barrado do tapete
+    g.strokeStyle = 'rgba(150,110,180,.35)';
+    g.lineWidth = Math.max(2, s * 0.12);
+    g.strokeRect(s * 1.35, s * 1.35, (W - 2.7) * s, (H - 2.7) * s);
+  }
+
+  function floorChecker(g, W, H, s) {
+    const q = s * 0.5;
+    for (let y = 0; y < H * 2; y++) {
+      for (let x = 0; x < W * 2; x++) {
+        g.fillStyle = (x + y) % 2 ? '#e6b9a2' : '#f6ecdc';
+        g.fillRect(x * q, y * q, q + 0.5, q + 0.5);
+      }
+    }
+  }
+
+  function floorTiles(g, W, H, s, rnd) {
+    g.fillStyle = '#c3b9a8';
+    g.fillRect(0, 0, W * s, H * s);
+    const q = s * 0.5, gap = Math.max(1, s * 0.04);
+    for (let y = 0; y < H * 2; y++) {
+      for (let x = 0; x < W * 2; x++) {
+        const v = Math.round(rnd() * 8);
+        g.fillStyle = `rgb(${232 + v},${225 + v},${210 + v})`;
+        g.fillRect(x * q + gap / 2, y * q + gap / 2, q - gap, q - gap);
+      }
+    }
+  }
+
+  function decoCushion(g, x, y, s, top, isWall) {
+    g.strokeStyle = 'rgba(255,255,255,.35)';
+    g.lineWidth = Math.max(1, s * 0.03);
+    g.setLineDash([s * 0.08, s * 0.07]);
+    g.beginPath();
+    const i = s * 0.16;
+    if (!isWall(x, y + 1)) { g.moveTo(x * s, top + s - i); g.lineTo(x * s + s, top + s - i); }
+    if (!isWall(x - 1, y)) { g.moveTo(x * s + i, top); g.lineTo(x * s + i, top + s); }
+    if (!isWall(x + 1, y)) { g.moveTo(x * s + s - i, top); g.lineTo(x * s + s - i, top + s); }
+    if (!isWall(x, y - 1)) { g.moveTo(x * s, top + i); g.lineTo(x * s + s, top + i); }
+    g.stroke();
+    g.setLineDash([]);
+  }
+
+  function decoDots(g, x, y, s, top) {
+    // Edredom lilás de bolinhas brancas, como a manta do Krug
+    g.fillStyle = 'rgba(255,255,255,.75)';
+    const dots = (x + y) % 2 ? [[0.25, 0.3], [0.75, 0.75]] : [[0.72, 0.28], [0.28, 0.72]];
+    for (const [dx, dy] of dots) {
+      g.beginPath(); g.arc(x * s + dx * s, top + dy * s, s * 0.07, 0, Math.PI * 2); g.fill();
+    }
+  }
+
+  function decoCabinet(g, x, y, s, top, isWall) {
+    // Armário de madeira com portinha e puxador
+    const i = s * 0.12;
+    g.strokeStyle = 'rgba(70,35,10,.45)';
+    g.lineWidth = Math.max(1, s * 0.04);
+    g.strokeRect(x * s + i, top + i, s - 2 * i, s - 2 * i);
+    g.fillStyle = '#f0d9a8';
+    g.beginPath(); g.arc(x * s + s * 0.5, top + s * 0.5, Math.max(1.5, s * 0.06), 0, Math.PI * 2); g.fill();
+    if (!isWall(x, y - 1)) { g.fillStyle = '#e8e2d6'; g.fillRect(x * s, top, s, Math.max(2, s * 0.1)); }
+  }
+
+  function decoTiles(g, x, y, s, top) {
+    // Azulejos na parede
+    g.strokeStyle = 'rgba(255,255,255,.55)';
+    g.lineWidth = Math.max(1, s * 0.03);
+    g.beginPath();
+    g.moveTo(x * s + s / 2, top); g.lineTo(x * s + s / 2, top + s);
+    g.moveTo(x * s, top + s / 2); g.lineTo(x * s + s, top + s / 2);
+    g.stroke();
+  }
+
+  const THEMES = [
+    { key: 'sala', name: 'sala', place: 'na sala', bg: '#134e4a', side: '#1a7a70', top: '#33bfae', floor: floorWood, deco: decoCushion, shadow: 'rgba(40,20,5,.28)' },
+    { key: 'quarto', name: 'quarto', place: 'no quarto', bg: '#2f2547', side: '#6f5c9c', top: '#ab97dc', floor: floorCarpet, deco: decoDots, shadow: 'rgba(60,40,80,.25)' },
+    { key: 'cozinha', name: 'cozinha', place: 'na cozinha', bg: '#3a2416', side: '#6b3f22', top: '#a8693a', floor: floorChecker, deco: decoCabinet, shadow: 'rgba(40,20,5,.3)' },
+    { key: 'banheiro', name: 'banheiro', place: 'no banheiro', bg: '#173d55', side: '#2f6f99', top: '#6fb3dd', floor: floorTiles, deco: decoTiles, shadow: 'rgba(20,50,80,.22)' },
+  ];
+  const themeFor = (n) => THEMES[Math.floor((n - 1) / 5) % THEMES.length];
+
+  function buildStaticLayer() {
+    const c = document.createElement('canvas');
+    c.width = Math.ceil(L.W * TS * dpr);
+    c.height = Math.ceil(L.H * TS * dpr);
+    const g = c.getContext('2d');
+    g.scale(dpr, dpr);
+    const W = L.W, H = L.H, s = TS, th = L.theme;
+    let seed = 7;
+    const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+
+    th.floor(g, W, H, s, rnd);
 
     const isWall = (x, y) => x >= 0 && y >= 0 && x < W && y < H && L.g[y][x] === 1;
     const lift = s * 0.14;
 
     // Sombra das paredes
-    g.fillStyle = 'rgba(40,20,5,.28)';
+    g.fillStyle = th.shadow;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       if (isWall(x, y)) g.fillRect(x * s + s * 0.12, y * s + s * 0.16, s, s);
     }
     // Lateral (mais escura)
-    g.fillStyle = '#1a7a70';
+    g.fillStyle = th.side;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (isWall(x, y)) g.fillRect(x * s, y * s, s, s);
-    // Topo da almofada
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      if (!isWall(x, y)) continue;
-      g.fillStyle = '#33bfae';
-      g.fillRect(x * s, y * s - lift, s, s);
-    }
-    // Brilho e costura nas bordas que dão para o chão
+    // Topo
+    g.fillStyle = th.top;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (isWall(x, y)) g.fillRect(x * s, y * s - lift, s, s);
+    // Brilho nas bordas e enfeite de cada cômodo
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       if (!isWall(x, y)) continue;
       const top = y * s - lift;
       if (!isWall(x, y - 1)) { g.fillStyle = 'rgba(255,255,255,.28)'; g.fillRect(x * s, top, s, Math.max(2, s * 0.08)); }
-      g.strokeStyle = 'rgba(255,255,255,.35)';
-      g.lineWidth = Math.max(1, s * 0.03);
-      g.setLineDash([s * 0.08, s * 0.07]);
-      g.beginPath();
-      const i = s * 0.16;
-      if (!isWall(x, y + 1)) { g.moveTo(x * s, top + s - i); g.lineTo(x * s + s, top + s - i); }
-      if (!isWall(x - 1, y)) { g.moveTo(x * s + i, top); g.lineTo(x * s + i, top + s); }
-      if (!isWall(x + 1, y)) { g.moveTo(x * s + s - i, top); g.lineTo(x * s + s - i, top + s); }
-      if (!isWall(x, y - 1)) { g.moveTo(x * s, top + i); g.lineTo(x * s + s, top + i); }
-      g.stroke();
-      g.setLineDash([]);
+      th.deco(g, x, y, s, top, isWall);
     }
     staticLayer = c;
   }
@@ -638,6 +741,89 @@
     [[-1.5, -1.4], [-0.5, -2], [0.5, -2], [1.5, -1.4]].forEach(([a, b]) => { g.beginPath(); g.arc(px + a * pr, py + b * pr, pr * 0.55, 0, Math.PI * 2); g.fill(); });
     g.restore();
   }
+
+  /** Cobertinha xadrez cinza dobrada, como a manta do Krug. */
+  function drawCoberta(g, x, y, s, t = 0) {
+    const w = s * 0.66, h = s * 0.5;
+    const bob = Math.sin(t * 2.5 + x * 0.05) * s * 0.02;
+    g.save();
+    g.translate(x, y + bob);
+    g.rotate(-0.12);
+    g.fillStyle = 'rgba(0,0,0,.2)';
+    roundRect(g, -w / 2 + s * 0.05, -h / 2 + s * 0.07, w, h, s * 0.08); g.fill();
+    g.fillStyle = '#b9c0c8';
+    roundRect(g, -w / 2, -h / 2, w, h, s * 0.08); g.fill();
+    g.save();
+    roundRect(g, -w / 2, -h / 2, w, h, s * 0.08); g.clip();
+    g.fillStyle = 'rgba(70,78,90,.45)';
+    for (let i = -2; i <= 2; i++) g.fillRect(i * w * 0.24 - w * 0.05, -h / 2, w * 0.1, h);
+    g.fillStyle = 'rgba(255,255,255,.4)';
+    for (let i = -1; i <= 1; i++) g.fillRect(-w / 2, i * h * 0.32 - h * 0.05, w, h * 0.1);
+    // Dobra
+    g.fillStyle = 'rgba(255,255,255,.35)';
+    g.fillRect(-w / 2, h * 0.12, w, h * 0.06);
+    g.restore();
+    g.strokeStyle = '#7d8590';
+    g.lineWidth = Math.max(1, s * 0.03);
+    roundRect(g, -w / 2, -h / 2, w, h, s * 0.08); g.stroke();
+    g.restore();
+  }
+
+  /** O Krug enrolado na cobertinha (anel xadrez em volta da tampinha). */
+  function drawWrap(g, x, y, R, t) {
+    g.save();
+    g.translate(x, y);
+    g.rotate(Math.sin(t * 2) * 0.15);
+    g.lineWidth = R * 0.42;
+    g.strokeStyle = '#b9c0c8';
+    g.beginPath(); g.arc(0, 0, R * 1.1, 0, Math.PI * 2); g.stroke();
+    g.lineWidth = R * 0.42;
+    g.strokeStyle = 'rgba(70,78,90,.5)';
+    g.setLineDash([R * 0.22, R * 0.3]);
+    g.beginPath(); g.arc(0, 0, R * 1.1, 0, Math.PI * 2); g.stroke();
+    g.setLineDash([]);
+    g.lineWidth = Math.max(1, R * 0.07);
+    g.strokeStyle = 'rgba(255,255,255,.55)';
+    g.beginPath(); g.arc(0, 0, R * 1.1, 0, Math.PI * 2); g.stroke();
+    g.restore();
+  }
+
+  /** Plaquinha no canto: popocas comidas e tempo da fase. */
+  function drawChip() {
+    if (!L || (S.mode !== 'play' && S.mode !== 'levelDone' && S.mode !== 'paused')) return;
+    let left = 0;
+    for (const v of L.items.values()) if (v === 'popoca') left++;
+    const eaten = L.popTotal - left;
+    const secs = Math.floor(S.levelTime);
+    const late = S.levelTime > L.par;
+    const fs = 14;
+    ctx.save();
+    ctx.font = `700 ${fs}px "Baloo 2", system-ui, sans-serif`;
+    const t1 = `${eaten}/${L.popTotal}`, t2 = `${secs}/${L.par} s`;
+    const w1 = ctx.measureText(t1).width, w2 = ctx.measureText(t2).width;
+    const pad = 8, ic = 18;
+    const w = pad + ic + 4 + w1 + 12 + ic + 4 + w2 + pad, h = 28;
+    const x = 8, y = vh - h - 8;
+    ctx.fillStyle = 'rgba(0,0,0,.45)';
+    roundRect(ctx, x, y, w, h, 14); ctx.fill();
+    drawPopoca(ctx, x + pad + ic / 2, y + h / 2, ic * 1.15, 0);
+    ctx.fillStyle = eaten === L.popTotal ? '#ffe08a' : '#fff';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    ctx.fillText(t1, x + pad + ic + 4, y + h / 2 + 1);
+    // Relógio
+    const cx = x + pad + ic + 4 + w1 + 12 + ic / 2, cy = y + h / 2;
+    ctx.strokeStyle = late ? '#ff8a8a' : '#fff';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, ic * 0.4, 0, Math.PI * 2); ctx.stroke();
+    const a = (S.levelTime / Math.max(1, L.par)) * Math.PI * 2 - Math.PI / 2;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * ic * 0.28, cy + Math.sin(a) * ic * 0.28); ctx.stroke();
+    ctx.fillStyle = late ? '#ff8a8a' : '#fff';
+    ctx.fillText(t2, cx + ic / 2 + 4, y + h / 2 + 1);
+    ctx.restore();
+  }
+
+  const STAR_SVG = '<svg viewBox="0 0 24 24"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></svg>';
 
   function roundRect(g, x, y, w, h, r) {
     r = Math.min(r, w / 2, h / 2);
@@ -783,6 +969,20 @@
       floatText(px, py, '+' + CFG.pts.pao, '#ffe08a');
       banner('Krug corajoso!', 'Agora o má banho é que foge');
       Snd.pao();
+    } else if (it === 'coberta') {
+      L.items.delete(i);
+      burst(px, py, '#d6dbe0', 14, 3, 0.1);
+      if (K.shield) {
+        S.score += CFG.pts.coberta;
+        floatText(px, py, '+' + CFG.pts.coberta, '#e9edf1');
+      } else {
+        K.shield = true;
+        K.shieldPop = 0.4;
+        banner('Cobertinha!', 'Protege de um má banho');
+      }
+      K.happyT = 0.6;
+      Snd.coberta();
+      updateHud();
     }
     if (K.cx === L.goal.x && K.cy === L.goal.y) levelDone();
   }
@@ -837,6 +1037,19 @@
           burst(b.x + 0.5, b.y + 0.5, '#5bb8f0', 18, 4, 0.1, 6);
           floatText(b.x + 0.5, b.y + 0.5, '+' + CFG.pts.bathScared, '#bde6ff');
           Snd.scare();
+        } else if (K.invulnT <= 0 && K.shield) {
+          // A cobertinha molha no lugar do Krug
+          K.shield = false;
+          K.invulnT = 1.6;
+          K.scaredT = 0.35;
+          K.saved = true;
+          K.moving = false;
+          K.queue = null;
+          burst(K.x + 0.5, K.y + 0.5, '#5bb8f0', 16, 3.5, 0.09, 6);
+          burst(K.x + 0.5, K.y + 0.5, '#c9ced6', 10, 3, 0.1, 4);
+          banner('Ufa!', 'A cobertinha protegeu o Krug');
+          Snd.shieldHit();
+          updateHud();
         } else if (K.invulnT <= 0) {
           hit(b);
         }
@@ -845,6 +1058,7 @@
   }
 
   function hit(b) {
+    K.saved = false;
     S.lives--;
     K.scaredT = CFG.scaredTime;
     K.moving = false;
@@ -858,6 +1072,7 @@
   }
 
   function afterScare() {
+    if (K.saved) { K.saved = false; return; }
     if (S.lives <= 0) { gameOver(); return; }
     K.cx = L.start.x; K.cy = L.start.y; K.x = K.cx; K.y = K.cy;
     K.prog = 0; K.dir = null;
@@ -871,13 +1086,17 @@
     L = buildLevel(S.level);
     Object.assign(K, {
       cx: L.start.x, cy: L.start.y, x: L.start.x, y: L.start.y, dir: null, prog: 0, moving: false,
-      queue: null, angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0,
+      queue: null, angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0, saved: false,
     });
     particles.length = 0;
     floaters.length = 0;
+    S.levelTime = 0;
     layout();
     S.mode = 'play';
-    banner('Fase ' + S.level, S.level === 1 ? 'Leve o Krug até a tigela de papá' : '');
+    let sub = '';
+    if (S.level === 1) sub = 'Leve o Krug até a tigela de papá';
+    else if ((S.level - 1) % 5 === 0) sub = 'Agora ' + L.theme.place;
+    banner('Fase ' + S.level, sub, sub ? 2.2 : 1.6);
     Snd.bark(0.1);
     updateHud();
   }
@@ -886,6 +1105,8 @@
     S.level = 1;
     S.score = 0;
     S.lives = CFG.lives;
+    S.stars = 0;
+    K.shield = false;
     S.bestAtStart = S.best;
     hideAll();
     startLevel();
@@ -899,12 +1120,32 @@
     burst(L.goal.x + 0.5, L.goal.y + 0.5, '#ffe08a', 30, 5, 0.12);
     burst(L.goal.x + 0.5, L.goal.y + 0.5, '#ff6b6b', 20, 4, 0.1);
     Snd.bowl();
+    // Estrelas: chegar, comer todas as popocas, chegar dentro do tempo
+    let popLeft = 0;
+    for (const v of L.items.values()) if (v === 'popoca') popLeft++;
+    const t = Math.ceil(S.levelTime);
+    const got = [true, popLeft === 0, S.levelTime <= L.par];
+    const nStars = got.filter(Boolean).length;
+    const starBonus = (nStars - 1) * CFG.pts.star;
+    S.score += starBonus;
+    S.stars += nStars;
     let extra = '';
     if (S.level % 3 === 0 && S.lives < CFG.lives) { S.lives++; extra = ' e uma patinha de volta'; }
     updateHud();
     saveBest();
     $('#level-text').textContent = `Fase ${S.level} concluída. O Krug chegou à tigela de papá!`;
-    $('#level-bonus').textContent = `+${bonus} pontos${extra}`;
+    $('#level-bonus').textContent = `+${bonus + starBonus} pontos${extra}`;
+    const labels = [
+      'Chegou à tigela de papá',
+      popLeft === 0 ? 'Comeu todas as popocas' : `Comeu todas as popocas (faltaram ${popLeft})`,
+      `Chegou em até ${L.par} s (levou ${t} s)`,
+    ];
+    $('#star-list').innerHTML = labels.map((txt, i) => `<li class="${got[i] ? 'ok' : ''}">${STAR_SVG}<span>${txt}</span></li>`).join('');
+    const big = $('#level-stars');
+    big.innerHTML = got.map((ok, i) => `<span class="big-star ${ok ? 'ok' : ''}" style="animation-delay:${0.15 + i * 0.25}s">${STAR_SVG}</span>`).join('');
+    setTimeout(() => {
+      got.forEach((ok, i) => { if (ok) Snd.star(i * 0.25 + 0.15, i); });
+    }, 900);
     setTimeout(() => show('#screen-level'), 900);
   }
 
@@ -929,7 +1170,7 @@
     $('#over-title').textContent = rec ? 'Krug campeão!' : 'O Krug cansou...';
     $('#over-photo').src = rec ? 'assets/foto-recorde.jpg' : 'assets/foto-fim.jpg';
     $('#over-photo').alt = rec ? 'Krug dormindo com o cachecol do Brasil' : 'Krug dormindo no sofá';
-    $('#over-text').textContent = `O má banho venceu desta vez. Você chegou à fase ${S.level} com ${S.score} pontos.`;
+    $('#over-text').textContent = `O má banho venceu desta vez. Você chegou à fase ${S.level} com ${S.score} pontos e ${S.stars} ${S.stars === 1 ? 'estrela' : 'estrelas'}.`;
     $('#over-record').textContent = rec ? 'Novo recorde!' : `Recorde: ${S.best} pontos`;
     setTimeout(() => show('#screen-over'), 400);
   }
@@ -971,6 +1212,7 @@
       for (let i = 0; i < CFG.lives; i++) h += PAW.replace('<svg', i < S.lives ? '<svg' : '<svg class="lost"');
       $('#hud-lives').innerHTML = h;
     }
+    $('#hud-shield').classList.toggle('on', !!K.shield);
   }
   function updateSoundBtn() { $('#btn-sound').innerHTML = Snd.on ? SND_ON : SND_OFF; }
 
@@ -996,7 +1238,9 @@
         K.scaredT -= dt;
         if (K.scaredT <= 0) { K.scaredT = 0; afterScare(); }
       }
+      S.levelTime += dt;
       if (K.braveT > 0) K.braveT = Math.max(0, K.braveT - dt);
+      if (K.shieldPop > 0) K.shieldPop = Math.max(0, K.shieldPop - dt);
       if (K.invulnT > 0) K.invulnT = Math.max(0, K.invulnT - dt);
       stepKrug(dt);
       stepBaths(dt);
@@ -1027,7 +1271,7 @@
 
   function render() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#134e4a';
+    ctx.fillStyle = L ? L.theme.bg : '#134e4a';
     ctx.fillRect(0, 0, vw, vh);
     if (!L || !staticLayer) return;
     const t = S.time;
@@ -1044,7 +1288,8 @@
       const x = i % L.W, y = (i / L.W) | 0;
       if (!inView(x, y)) continue;
       if (type === 'popoca') drawPopoca(ctx, P(x), P(y), TS, t);
-      else drawPao(ctx, P(x), P(y), TS, t);
+      else if (type === 'pao') drawPao(ctx, P(x), P(y), TS, t);
+      else drawCoberta(ctx, P(x), P(y), TS, t);
     }
 
     for (const b of L.baths) {
@@ -1075,6 +1320,7 @@
     ctx.save();
     if (blink) ctx.globalAlpha = 0.35;
     const scale = S.mode === 'levelDone' ? 1 + Math.sin(t * 10) * 0.06 : 1;
+    if (K.shield) drawWrap(ctx, kx, ky, TS * 0.47 * scale * (1 + K.shieldPop * 0.6), t);
     drawCap(ctx, kx, ky, TS * 0.47 * scale, K.angle, face, { glow: braveBlink });
     ctx.restore();
 
@@ -1124,6 +1370,8 @@
       ctx.beginPath(); ctx.moveTo(30 * pulse, 0); ctx.lineTo(20, -8); ctx.lineTo(20, 8); ctx.closePath(); ctx.fill();
       ctx.restore();
     }
+
+    drawChip();
 
     // Faixa de mensagem
     if (S.banner) {
@@ -1255,6 +1503,7 @@
       if (type === 'popoca') drawPopoca(g, s / 2, s / 2, s * 0.95, 0);
       if (type === 'pao') drawPao(g, s / 2, s / 2, s * 1.1, 0);
       if (type === 'bath') drawBath(g, s / 2, s / 2, s * 1.05, 0);
+      if (type === 'coberta') drawCoberta(g, s / 2, s / 2, s * 1.1, 0);
     });
     const tc = $('#title-cap');
     const size = 120, r = 2;
