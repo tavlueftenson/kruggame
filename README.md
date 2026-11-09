@@ -12,17 +12,19 @@ Jogo web de labirinto visto de cima. O jogador conduz a tampinha de refrigerante
 
 | Item | Efeito |
 | --- | --- |
-| Tigela de papá | Conclui a fase (+100 × número da fase) |
+| Tigela de papá | Conclui a fase (+100 × número da fase). A partir da fase 8, ela treme, foge com um apito de escorregador e reaparece em outro lugar a cada 9 a 13 s (nunca quando o Krug está chegando) |
 | Popoca | +10 pontos |
 | Pão do queijo | +50 pontos e coragem por 7 segundos: o Krug espanta o má banho (+30) |
 | Cobertinha | Protege o Krug de um toque do má banho (aparece a partir da fase 2; se já estiver com uma, vale +20) |
 | Raio de sol | O Krug para 1,6 s para se aquecer e depois segue na mesma direção (ou na que você escolher enquanto ele cochila). Aparece a partir da fase 2 |
 | Gato gordinho | A partir da fase 4 (dois a partir da fase 10). Se o Krug vê o gato no mesmo corredor reto, a até 4 casas e sem parede no meio, esquece de tudo: para e late por 2,5 s sem obedecer aos controles. Depois o gato foge ofendido para outro canto, e o Krug fica 4 s sem se distrair de novo. As casas vigiadas pelo gato ficam levemente avermelhadas |
+| Ovo de chocolate branco | A partir da fase 10: o Krug come, ganha 40 pontos e dá um saltinho feliz |
+| Ovo de chocolate preto | A partir da fase 10: chocolate preto faz mal a cachorro, o Krug perde uma patinha (sem voltar ao começo). Nunca bloqueia o caminho |
 | Má banho | O Krug perde uma patinha e volta ao começo da fase |
 
 ### Estrelas
 
-Cada fase vale até 3 estrelas: chegar à tigela, comer todas as popocas e chegar dentro do tempo indicado no canto da tela. Cada estrela além da primeira vale +50 pontos.
+Cada fase vale até 3 estrelas: chegar à tigela, comer todas as popocas e comer todos os pães do queijo. Não há recompensa por velocidade. A plaquinha no canto da tela mostra quantas popocas e quantos pães já foram comidos. Todas as popocas e todos os pães podem ser alcançados sem passar por banho parado nem por ovo de chocolate preto. Cada estrela além da primeira vale +50 pontos.
 
 ### Cômodos
 
@@ -30,7 +32,7 @@ A cada 5 fases o Krug muda de cômodo: sala, quarto, cozinha e banheiro, e depoi
 
 ### Intervalo
 
-A cada 5 fases completas, ao tocar em "Próxima fase", aparece uma animação do Krug grande correndo atrás da tigela de papá, com uma musiquinha original. Um toque, Enter ou a barra de espaço pulam a animação.
+A cada 5 fases completas, ao tocar em "Próxima fase", aparece uma animação do Krug grande correndo atrás da tigela de papá, com uma musiquinha original. Da fase 10 em diante, o gato gordinho também aparece no caminho e foge irritado quando o Krug se aproxima. Um toque, Enter ou a barra de espaço pulam a animação.
 
 ### Patinhas
 

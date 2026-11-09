@@ -23,6 +23,8 @@
     catCooldown: 4,      // segundos sem se distrair de novo depois de latir
     catWalk: 1.1,        // casas por segundo do gato passeando
     catFlee: 5.5,        // casas por segundo do gato fugindo ofendido
+    bowlEvery: [9, 13],  // a tigela muda de lugar a cada 9 a 13 s (fase 8 em diante)
+    bowlWarnTime: 1.2,   // segundos balançando antes de fugir
     lives: 3,
     braveTime: 7,        // segundos de coragem depois do pão do queijo
     scaredTime: 1.1,     // segundos tremendo depois do má banho
@@ -30,7 +32,7 @@
     minTile: 24,         // tamanho mínimo da casa em pixels CSS
     maxTile: 64,
     hitRadius: 0.62,     // distância (em casas) para encostar no banho
-    pts: { popoca: 10, pao: 50, bathScared: 30, bowl: 100, coberta: 20, star: 50 },
+    pts: { popoca: 10, pao: 50, bathScared: 30, bowl: 100, coberta: 20, star: 50, ovo: 40 },
   };
 
   const D4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
@@ -288,6 +290,68 @@
         },
       };
     },
+    yum() {
+      [659, 784, 988, 1319].forEach((f, i) => this.tone(f, 0.12, 'triangle', 0.13, null, i * 0.06));
+      this.play(this.randomBark(), { delay: 0.22, rate: 1.25, vol: 0.7 });
+    },
+    blergh() {
+      if (!this.on || !this.ac) return;
+      const t = this.ac.currentTime;
+      const o = this.ac.createOscillator();
+      const lfo = this.ac.createOscillator();
+      const lg = this.ac.createGain();
+      const g = this.ac.createGain();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(260, t);
+      o.frequency.exponentialRampToValueAtTime(90, t + 0.7);
+      lfo.frequency.value = 18;
+      lg.gain.value = 25;
+      lfo.connect(lg).connect(o.frequency);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.12, t + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.75);
+      o.connect(g).connect(this.ac.destination);
+      o.start(t); lfo.start(t);
+      o.stop(t + 0.8); lfo.stop(t + 0.8);
+      this.play(this.randomBark(), { delay: 0.35, rate: 1.5, vol: 0.6 });
+    },
+    /** Tigela tremendo antes de fugir: "tremelique" agudo. */
+    bowlWarn() {
+      for (let i = 0; i < 6; i++) this.tone(i % 2 ? 1180 : 990, 0.07, 'square', 0.04, null, i * 0.12);
+    },
+    /** Tigela mudando de lugar: apito de escorregador subindo e descendo, mais um "boing". */
+    bowlMove() {
+      if (!this.on || !this.ac) return;
+      const t = this.ac.currentTime;
+      const o = this.ac.createOscillator();
+      const g = this.ac.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(380, t);
+      o.frequency.exponentialRampToValueAtTime(1500, t + 0.28);
+      o.frequency.exponentialRampToValueAtTime(320, t + 0.62);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.18, t + 0.03);
+      g.gain.setValueAtTime(0.18, t + 0.55);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.66);
+      o.connect(g).connect(this.ac.destination);
+      o.start(t); o.stop(t + 0.7);
+      const b = this.ac.createOscillator();
+      const bg = this.ac.createGain();
+      const vib = this.ac.createOscillator();
+      const vg = this.ac.createGain();
+      b.type = 'triangle';
+      b.frequency.setValueAtTime(180, t + 0.62);
+      b.frequency.exponentialRampToValueAtTime(520, t + 0.72);
+      b.frequency.exponentialRampToValueAtTime(140, t + 1.05);
+      vib.frequency.value = 22; vg.gain.value = 30;
+      vib.connect(vg).connect(b.frequency);
+      bg.gain.setValueAtTime(0.0001, t + 0.62);
+      bg.gain.exponentialRampToValueAtTime(0.25, t + 0.65);
+      bg.gain.exponentialRampToValueAtTime(0.0001, t + 1.08);
+      b.connect(bg).connect(this.ac.destination);
+      b.start(t + 0.62); vib.start(t + 0.62);
+      b.stop(t + 1.1); vib.stop(t + 1.1);
+    },
     hiss() { this.noise(0.55, 0.22, 4500, 0, 0.7); },
     meow(delay = 0) {
       if (!this.on || !this.ac) return;
@@ -528,28 +592,36 @@
       suns.push({ tiles, horizontal: r.horizontal, phase: Math.random() * 6 });
     }
 
+    // Ovos de páscoa a partir da fase 10: o preto (faz mal) nunca bloqueia caminho
+    const darkSet = new Set();
+    const nDark = n >= 10 ? Math.min(2 + Math.floor((n - 10) / 3), 6) : 0;
+    const nWhite = n >= 10 ? Math.min(2 + Math.floor((n - 10) / 4), 4) : 0;
+    for (const c of shuffle(cells.slice())) {
+      if (darkSet.size >= nDark) break;
+      if (c === goalIdx || items.has(c) || bathSet.has(c) || sunAt.has(c) || blocked.has(c) || d0[c] < 4) continue;
+      blocked.add(c);
+      if (pathOk()) { darkSet.add(c); items.set(c, 'ovoPreto'); } else blocked.delete(c);
+    }
+
+    // Tudo o que vale estrela precisa ser alcançável sem passar por banho nem ovo preto
+    const reach = bfs(m, 1, 1, blocked);
+    let wc = 0;
+    for (const c of pool) {
+      if (wc >= nWhite) break;
+      if (items.has(c) || bathSet.has(c) || reach[c] < 0) continue;
+      items.set(c, 'ovoBranco');
+      wc++;
+    }
+
     // Popoca espalhada pelo resto do labirinto
-    const nPop = Math.round(cells.length * 0.28);
+    const nPop = Math.min(Math.round(cells.length * 0.28), 45);
     let pc = 0;
     for (const c of pool) {
       if (pc >= nPop) break;
-      if (items.has(c) || bathSet.has(c)) continue;
+      if (items.has(c) || bathSet.has(c) || reach[c] < 0) continue;
       items.set(c, 'popoca');
       pc++;
     }
-
-    // Tempo para a terceira estrela: folgado em relação ao caminho mais curto
-    const dPar = bfs(m, 1, 1, blocked);
-    // Conta as sonecas no sol que o caminho mais curto obriga
-    const napZones = new Set();
-    for (let p = goalIdx; dPar[p] > 0;) {
-      if (sunAt.has(p)) napZones.add(sunAt.get(p));
-      const x = p % W, y = (p / W) | 0;
-      const nb = D4.map(([dx, dy]) => (x + dx) + (y + dy) * W).find((q) => dPar[q] === dPar[p] - 1);
-      if (nb === undefined) break;
-      p = nb;
-    }
-    const par = Math.ceil((dPar[goalIdx] / CFG.speed) * 1.8 + 5 + napZones.size * CFG.napTime);
 
     // Gato gordinho: a partir da fase 4, longe do começo
     const nCat = n >= 4 ? (n >= 10 ? 2 : 1) : 0;
@@ -563,7 +635,8 @@
     return {
       n, m, W, H, g: m.g, start: { x: 1, y: 1 },
       goal: { x: goalIdx % W, y: (goalIdx / W) | 0 },
-      items, baths, idx, theme, par, popTotal: pc, suns, sunAt, cats,
+      items, baths, idx, theme, popTotal: pc, paoTotal: paoIdx.length, suns, sunAt, cats, blocked,
+      goalMoves: n >= 8, bowlTimer: 9 + Math.random() * 4, bowlWarn: 0, bowlPop: 0,
     };
   }
 
@@ -586,7 +659,7 @@
   const K = {               // a tampinha do Krug
     cx: 1, cy: 1, x: 1, y: 1, dir: null, prog: 0, moving: false, queue: null, queueT: 0,
     napT: 0, napDir: null, sunZone: null, zzz: 0,
-    barkT: 0, barkEvery: 0, barkCat: null, catCooldown: 0, barkShake: 0,
+    barkT: 0, barkEvery: 0, barkCat: null, catCooldown: 0, barkShake: 0, hopT: 0, sick: false,
     angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0, bumpDir: [0, 0], shield: false, shieldPop: 0,
   };
   const particles = [];
@@ -949,39 +1022,103 @@
     g.restore();
   }
 
-  /** Plaquinha no canto: popocas comidas e tempo da fase. */
+  /** Plaquinha no canto: popocas e pães do queijo comidos na fase. */
   function drawChip() {
     if (!L || (S.mode !== 'play' && S.mode !== 'levelDone' && S.mode !== 'paused')) return;
-    let left = 0;
-    for (const v of L.items.values()) if (v === 'popoca') left++;
-    const eaten = L.popTotal - left;
-    const secs = Math.floor(S.levelTime);
-    const late = S.levelTime > L.par;
+    let popLeft = 0, paoLeft = 0;
+    for (const v of L.items.values()) { if (v === 'popoca') popLeft++; else if (v === 'pao') paoLeft++; }
+    const popEaten = L.popTotal - popLeft, paoEaten = L.paoTotal - paoLeft;
     const fs = 14;
     ctx.save();
     ctx.font = `700 ${fs}px "Baloo 2", system-ui, sans-serif`;
-    const t1 = `${eaten}/${L.popTotal}`, t2 = `${secs}/${L.par} s`;
+    const t1 = `${popEaten}/${L.popTotal}`, t2 = `${paoEaten}/${L.paoTotal}`;
     const w1 = ctx.measureText(t1).width, w2 = ctx.measureText(t2).width;
     const pad = 8, ic = 18;
     const w = pad + ic + 4 + w1 + 12 + ic + 4 + w2 + pad, h = 28;
     const x = 8, y = vh - h - 8;
     ctx.fillStyle = 'rgba(0,0,0,.45)';
     roundRect(ctx, x, y, w, h, 14); ctx.fill();
-    drawPopoca(ctx, x + pad + ic / 2, y + h / 2, ic * 1.15, 0);
-    ctx.fillStyle = eaten === L.popTotal ? '#ffe08a' : '#fff';
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
+    drawPopoca(ctx, x + pad + ic / 2, y + h / 2, ic * 1.15, 0);
+    ctx.fillStyle = popLeft === 0 ? '#ffe08a' : '#fff';
     ctx.fillText(t1, x + pad + ic + 4, y + h / 2 + 1);
-    // Relógio
-    const cx = x + pad + ic + 4 + w1 + 12 + ic / 2, cy = y + h / 2;
-    ctx.strokeStyle = late ? '#ff8a8a' : '#fff';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(cx, cy, ic * 0.4, 0, Math.PI * 2); ctx.stroke();
-    const a = (S.levelTime / Math.max(1, L.par)) * Math.PI * 2 - Math.PI / 2;
-    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(a) * ic * 0.28, cy + Math.sin(a) * ic * 0.28); ctx.stroke();
-    ctx.fillStyle = late ? '#ff8a8a' : '#fff';
-    ctx.fillText(t2, cx + ic / 2 + 4, y + h / 2 + 1);
+    const x2 = x + pad + ic + 4 + w1 + 12;
+    drawPaoIcon(ctx, x2 + ic / 2, y + h / 2, ic);
+    ctx.fillStyle = paoLeft === 0 ? '#ffe08a' : '#fff';
+    ctx.fillText(t2, x2 + ic + 4, y + h / 2 + 1);
     ctx.restore();
+  }
+
+  /** Pão do queijo pequeno, sem brilho, para a plaquinha. */
+  function drawPaoIcon(g, x, y, s) {
+    const r = s * 0.42;
+    const grd = g.createRadialGradient(x - r * 0.35, y - r * 0.4, r * 0.1, x, y, r);
+    grd.addColorStop(0, '#ffe7a3');
+    grd.addColorStop(0.6, '#e9b14d');
+    grd.addColorStop(1, '#c4802c');
+    g.fillStyle = grd;
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(150,85,25,.6)';
+    [[0.3, 0.2], [-0.25, 0.3], [0.05, -0.35]].forEach(([a, b]) => { g.beginPath(); g.arc(x + a * r, y + b * r, r * 0.1, 0, Math.PI * 2); g.fill(); });
+  }
+
+  /** Ovo de páscoa: branco (o Krug pode comer) ou preto (faz mal). */
+  function drawEgg(g, x, y, s, t, dark) {
+    const rx = s * 0.28, ry = s * 0.36;
+    const bob = Math.sin(t * 2.2 + x * 0.07) * s * 0.025;
+    g.save();
+    g.translate(x, y + bob);
+    g.fillStyle = 'rgba(0,0,0,.22)';
+    g.beginPath(); g.ellipse(s * 0.04, ry * 0.95, rx * 0.95, ry * 0.25, 0, 0, Math.PI * 2); g.fill();
+    g.rotate(-0.15);
+    const egg = () => {
+      g.beginPath();
+      g.moveTo(0, -ry);
+      g.bezierCurveTo(rx * 1.05, -ry, rx * 1.15, ry * 0.95, 0, ry);
+      g.bezierCurveTo(-rx * 1.15, ry * 0.95, -rx * 1.05, -ry, 0, -ry);
+      g.closePath();
+    };
+    const grd = g.createRadialGradient(-rx * 0.4, -ry * 0.4, rx * 0.1, 0, 0, ry * 1.1);
+    if (dark) { grd.addColorStop(0, '#8a5634'); grd.addColorStop(1, '#3a2112'); }
+    else { grd.addColorStop(0, '#fffdf6'); grd.addColorStop(1, '#e6d9c2'); }
+    g.fillStyle = grd;
+    egg(); g.fill();
+    g.save();
+    egg(); g.clip();
+    if (dark) {
+      // Fita dourada com lacinho
+      g.fillStyle = '#e7b83f';
+      g.fillRect(-rx * 1.2, -ry * 0.08, rx * 2.4, ry * 0.2);
+      g.fillStyle = 'rgba(255,255,255,.18)';
+      g.fillRect(-rx * 1.2, -ry * 0.08, rx * 2.4, ry * 0.06);
+    } else {
+      // Zigue-zague rosa e bolinhas azuis
+      g.strokeStyle = '#f4a3b8';
+      g.lineWidth = Math.max(1.5, s * 0.04);
+      g.beginPath();
+      for (let i = 0; i <= 6; i++) {
+        const px = -rx * 1.1 + (i / 6) * rx * 2.2, py = (i % 2 ? -1 : 1) * ry * 0.1;
+        if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+      }
+      g.stroke();
+      g.fillStyle = '#8cc7f0';
+      [[-0.45, -0.5], [0.4, -0.45], [0, 0.5], [-0.5, 0.45], [0.5, 0.42]].forEach(([a, b]) => {
+        g.beginPath(); g.arc(a * rx, b * ry, s * 0.03, 0, Math.PI * 2); g.fill();
+      });
+    }
+    g.restore();
+    if (dark) {
+      g.fillStyle = '#e7b83f';
+      g.beginPath(); g.ellipse(-rx * 0.35, -ry * 0.05, rx * 0.3, rx * 0.16, -0.5, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.ellipse(rx * 0.05, -ry * 0.05, rx * 0.3, rx * 0.16, 0.5, 0, Math.PI * 2); g.fill();
+    }
+    g.fillStyle = 'rgba(255,255,255,.4)';
+    g.beginPath(); g.ellipse(-rx * 0.4, -ry * 0.45, rx * 0.15, ry * 0.22, -0.3, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = dark ? 'rgba(30,15,5,.6)' : 'rgba(150,130,100,.6)';
+    g.lineWidth = Math.max(1, s * 0.025);
+    egg(); g.stroke();
+    g.restore();
   }
 
   /** Tom avermelhado bem leve nas casas que o gato enxerga. */
@@ -1328,6 +1465,21 @@
       Snd.coberta();
       updateHud();
     }
+    if (it === 'ovoBranco') {
+      L.items.delete(i);
+      S.score += CFG.pts.ovo;
+      K.hopT = 0.6;
+      K.happyT = 0.9;
+      burst(px, py, '#fff6df', 14, 3, 0.09);
+      burst(px, py, '#f4a3b8', 8, 3, 0.07);
+      floatText(px, py, '+' + CFG.pts.ovo, '#ffe08a');
+      if (!eggHintShown.white) { eggHintShown.white = true; banner('Chocolate branco!', 'O Krug adorou'); }
+      Snd.yum();
+    } else if (it === 'ovoPreto') {
+      L.items.delete(i);
+      eatDark(px, py);
+      return;
+    }
     if (K.cx === L.goal.x && K.cy === L.goal.y) { levelDone(); return; }
     // Raio de sol: ao entrar numa faixa, o Krug para um instante para se aquecer
     const z = L.sunAt.get(i);
@@ -1336,6 +1488,71 @@
       K.sunZone = z;
       nap();
     }
+  }
+
+  const eggHintShown = { white: false, dark: false };
+
+  /** Chocolate preto faz mal a cachorro: o Krug perde uma patinha (não volta ao começo). */
+  function eatDark(px, py) {
+    S.lives--;
+    S.lastHurt = 'chocolate';
+    K.sick = true;
+    K.scaredT = 1.1;
+    K.moving = false;
+    K.queue = null;
+    K.napT = 0;
+    K.invulnT = CFG.invulnTime;
+    burst(px, py, '#6b3e22', 18, 3.5, 0.09, 5);
+    burst(px, py, '#9bc46b', 10, 2.5, 0.07);
+    banner('Chocolate preto faz mal!', S.lives > 0 ? 'O Krug perdeu uma patinha' : '');
+    Snd.blergh();
+    if (navigator.vibrate) { try { navigator.vibrate([60, 40, 60]); } catch (e) { /* sem vibração */ } }
+    updateHud();
+  }
+
+  let bowlHintShown = false;
+  /** Da fase 8 em diante, a tigela de papá muda de lugar de tempos em tempos. */
+  function stepBowl(dt) {
+    if (L.bowlPop > 0) L.bowlPop = Math.max(0, L.bowlPop - dt);
+    if (L.bowlWarn > 0) {
+      L.bowlWarn -= dt;
+      if (L.bowlWarn <= 0) { L.bowlWarn = 0; moveBowl(); }
+      return;
+    }
+    L.bowlTimer -= dt;
+    if (L.bowlTimer > 0) return;
+    // Não foge quando o Krug já está chegando
+    const near = Math.abs(K.x - L.goal.x) + Math.abs(K.y - L.goal.y) <= 3;
+    if (near) { L.bowlTimer = 2; return; }
+    L.bowlWarn = CFG.bowlWarnTime;
+    Snd.bowlWarn();
+  }
+
+  function moveBowl() {
+    const W = L.W;
+    const kx = Math.round(K.x), ky = Math.round(K.y);
+    const reach = bfs(L.m, 1, 1, L.blocked);
+    const dK = bfs(L.m, kx, ky, L.blocked);
+    const ok = [];
+    for (let y = 1; y < L.H; y += 2) {
+      for (let x = 1; x < W; x += 2) {
+        const i = x + y * W;
+        if (reach[i] < 0 || L.items.has(i) || L.sunAt.has(i)) continue;
+        if (x === L.goal.x && y === L.goal.y) continue;
+        if (dK[i] >= 0 && dK[i] < 8) continue;
+        if (L.baths.some((b) => !b.moving && b.x === x && b.y === y)) continue;
+        ok.push(i);
+      }
+    }
+    L.bowlTimer = CFG.bowlEvery[0] + Math.random() * (CFG.bowlEvery[1] - CFG.bowlEvery[0]);
+    if (!ok.length) return;
+    const i = ok[(Math.random() * ok.length) | 0];
+    burst(L.goal.x + 0.5, L.goal.y + 0.5, '#ffe08a', 16, 4, 0.09);
+    L.goal = { x: i % W, y: (i / W) | 0 };
+    L.bowlPop = 0.45;
+    burst(L.goal.x + 0.5, L.goal.y + 0.5, '#8fb4ff', 16, 4, 0.09);
+    Snd.bowlMove();
+    if (!bowlHintShown) { bowlHintShown = true; banner('A tigela fugiu!', 'Ela muda de lugar de vez em quando'); }
   }
 
   let napHintShown = false;
@@ -1379,7 +1596,7 @@
         K.cy += K.dir[1];
         K.prog = 0;
         arrive();
-        if (S.mode !== 'play' || K.napT > 0) { K.moving = false; break; }
+        if (S.mode !== 'play' || K.napT > 0 || K.scaredT > 0) { K.moving = false; break; }
         const next = decide();
         if (next) K.dir = next; else K.moving = false;
       }
@@ -1593,6 +1810,8 @@
   function hit(b) {
     if (K.barkT > 0) endBark();
     K.saved = false;
+    K.sick = false;
+    S.lastHurt = 'bath';
     K.napT = 0;
     K.napDir = null;
     S.lives--;
@@ -1609,6 +1828,7 @@
 
   function afterScare() {
     if (K.saved) { K.saved = false; return; }
+    if (K.sick) { K.sick = false; if (S.lives <= 0) gameOver(); return; }
     if (S.lives <= 0) { gameOver(); return; }
     K.cx = L.start.x; K.cy = L.start.y; K.x = K.cx; K.y = K.cy;
     K.prog = 0; K.dir = null;
@@ -1625,7 +1845,7 @@
       cx: L.start.x, cy: L.start.y, x: L.start.x, y: L.start.y, dir: null, prog: 0, moving: false,
       queue: null, angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0, saved: false, stopReq: false,
       napT: 0, napDir: null, sunZone: null, zzz: 0,
-      barkT: 0, barkEvery: 0, barkCat: null, catCooldown: 0, barkShake: 0,
+      barkT: 0, barkEvery: 0, barkCat: null, catCooldown: 0, barkShake: 0, hopT: 0, sick: false,
     });
     particles.length = 0;
     floaters.length = 0;
@@ -1645,6 +1865,7 @@
     S.score = 0;
     S.lives = CFG.lives;
     S.stars = 0;
+    S.lastHurt = null;
     K.shield = false;
     S.bestAtStart = S.best;
     hideAll();
@@ -1659,11 +1880,10 @@
     burst(L.goal.x + 0.5, L.goal.y + 0.5, '#ffe08a', 30, 5, 0.12);
     burst(L.goal.x + 0.5, L.goal.y + 0.5, '#ff6b6b', 20, 4, 0.1);
     Snd.bowl();
-    // Estrelas: chegar, comer todas as popocas, chegar dentro do tempo
-    let popLeft = 0;
-    for (const v of L.items.values()) if (v === 'popoca') popLeft++;
-    const t = Math.ceil(S.levelTime);
-    const got = [true, popLeft === 0, S.levelTime <= L.par];
+    // Estrelas: chegar à tigela, comer todas as popocas, comer todos os pães do queijo
+    let popLeft = 0, paoLeft = 0;
+    for (const v of L.items.values()) { if (v === 'popoca') popLeft++; else if (v === 'pao') paoLeft++; }
+    const got = [true, popLeft === 0, paoLeft === 0];
     const nStars = got.filter(Boolean).length;
     const starBonus = (nStars - 1) * CFG.pts.star;
     S.score += starBonus;
@@ -1676,8 +1896,8 @@
     $('#level-bonus').textContent = `+${bonus + starBonus} pontos${extra}`;
     const labels = [
       'Chegou à tigela de papá',
-      popLeft === 0 ? 'Comeu todas as popocas' : `Comeu todas as popocas (faltaram ${popLeft})`,
-      `Chegou em até ${L.par} s (levou ${t} s)`,
+      popLeft === 0 ? 'Comeu todas as popocas' : `Comeu todas as popocas (${popLeft === 1 ? 'faltou 1' : `faltaram ${popLeft}`})`,
+      paoLeft === 0 ? 'Comeu todos os pães do queijo' : `Comeu todos os pães do queijo (${paoLeft === 1 ? 'faltou 1' : `faltaram ${paoLeft}`})`,
     ];
     $('#star-list').innerHTML = labels.map((txt, i) => `<li class="${got[i] ? 'ok' : ''}">${STAR_SVG}<span>${txt}</span></li>`).join('');
     const big = $('#level-stars');
@@ -1727,15 +1947,152 @@
         window.addEventListener('keydown', onKey);
       }, 400);
       let barked = false;
+      let catDone = level < 10;
       const step = (now) => {
         if (done) return;
         const t = (now - t0) / 1000;
+        if (!catDone && cutCat(W, H, t).scared) {
+          catDone = true;
+          Snd.hiss();
+          Snd.bark(0.15, { rate: 1.05 });
+          Snd.meow(0.45);
+        }
         drawCutscene(g, W, H, r, t, level);
         if (!barked && t > 4.9) { barked = true; Snd.doubleBark(0); }
         if (t > DUR) finish(); else requestAnimationFrame(step);
       };
       requestAnimationFrame(step);
     });
+  }
+
+  /** Posições do intervalo: a tigela vai na frente e o Krug encurta a distância. */
+  function cutLayout(W, H, t) {
+    const R = Math.min(H * 0.17, W * 0.2);
+    const legH = R * 0.35;
+    const bowlW = R * 1.3, bowlH = R * 0.65;
+    const gapAt = (tt) => R * Math.max(1.9, 2.7 - tt * 0.16);
+    const bx0 = -bowlW / 2;
+    const v = (W + R * 1.6 + bowlW / 2 + gapAt(5.3)) / 5.0;
+    const bxAt = (tt) => bx0 + v * (tt - 0.3);
+    const bx = bxAt(t);
+    const kx = bx - gapAt(t);
+    return { R, legH, bowlW, bowlH, v, bxAt, bx, kx, floorY: H * 0.7 };
+  }
+
+  /**
+   * Gato do intervalo (fase 10 em diante): sentado no caminho, se irrita
+   * quando o Krug chega perto e foge correndo para a direita.
+   */
+  function cutCat(W, H, t) {
+    const { R, v } = cutLayout(W, H, t);
+    const catX = W * 0.66;
+    // Instante em que o Krug chega perto do gato
+    let tScare = 0;
+    for (let tt = 0; tt < 8; tt += 0.02) { if (cutLayout(W, H, tt).kx > catX - R * 2.6) { tScare = tt; break; } }
+    const scared = t >= tScare;
+    const run = Math.max(0, t - tScare - 0.35);
+    const x = catX + run * v * 2.1 + (run > 0 ? 0 : 0);
+    return { x, scared, tScare, run, R: R * 0.85, jump: scared && t - tScare < 0.35 ? Math.sin(((t - tScare) / 0.35) * Math.PI) : 0 };
+  }
+
+  /** Gato gordinho cinza visto de lado (só no intervalo). */
+  function drawCatSide(g, x, floorY, R, t, st) {
+    const running = st.run > 0;
+    const y = floorY - R * 0.95 - st.jump * R * 0.9 - (running ? Math.abs(Math.sin(t * 20)) * R * 0.12 : 0);
+    g.save();
+    g.translate(x, y);
+    // Sombra
+    g.fillStyle = 'rgba(0,0,0,.22)';
+    g.beginPath(); g.ellipse(0, floorY - y - R * 0.02, R * 1.1, R * 0.16, 0, 0, Math.PI * 2); g.fill();
+    // Sentado, olha para a esquerda (para o Krug); correndo, vai para a direita
+    const dirX = running ? 1 : -1;
+    g.scale(dirX, 1);
+    // Rabo: enrolado no chão quando calmo, em pé e estufado quando irritado
+    g.lineCap = 'round';
+    g.strokeStyle = '#5f656d';
+    g.lineWidth = R * (st.scared ? 0.42 : 0.22);
+    g.beginPath();
+    if (st.scared) { g.moveTo(-R * 0.9, -R * 0.1); g.quadraticCurveTo(-R * 1.5, -R * 0.6, -R * 1.25, -R * 1.5); }
+    else { const sw = Math.sin(t * 3) * R * 0.15; g.moveTo(-R * 0.8, R * 0.6); g.quadraticCurveTo(-R * 1.6, R * 0.9 + sw, -R * 1.2, R * 0.35); }
+    g.stroke();
+    if (st.scared) {
+      g.strokeStyle = 'rgba(200,205,212,.8)';
+      g.lineWidth = Math.max(1, R * 0.06);
+      for (let k = 0; k < 7; k++) {
+        const a = k / 6;
+        const px = -R * 0.95 - Math.sin(a * 1.6) * R * 0.5 + a * R * 0.2, py = -R * 0.1 - a * R * 1.4;
+        g.beginPath(); g.moveTo(px - R * 0.25, py); g.lineTo(px + R * 0.25, py); g.stroke();
+      }
+    }
+    // Patas
+    g.fillStyle = '#7e848c';
+    const legs = running ? [[-0.55, 1], [-0.25, -1], [0.3, 1], [0.6, -1]] : [[-0.4, 0], [0.45, 0]];
+    legs.forEach(([lx, ph]) => {
+      const sw = running ? Math.sin(t * 24) * ph * R * 0.25 : 0;
+      g.beginPath(); g.ellipse(lx * R + sw, R * 0.75, R * 0.13, R * 0.3, sw / R, 0, Math.PI * 2); g.fill();
+    });
+    // Corpo gordinho
+    const puff = st.scared ? 1.12 : 1;
+    const body = g.createRadialGradient(-R * 0.2, -R * 0.4, R * 0.1, 0, 0, R * 1.1);
+    body.addColorStop(0, '#c3c8ce');
+    body.addColorStop(1, '#7e848c');
+    g.fillStyle = body;
+    g.beginPath();
+    if (running) g.ellipse(0, R * 0.1, R * 1.05 * puff, R * 0.7 * puff, 0, 0, Math.PI * 2);
+    else g.ellipse(0, R * 0.1, R * 0.85 * puff, R * 0.8 * puff, 0, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = 'rgba(70,75,82,.5)';
+    g.lineWidth = R * 0.12;
+    for (let i = -1; i <= 1; i++) {
+      g.beginPath(); g.moveTo(i * R * 0.35, -R * 0.6 * puff); g.quadraticCurveTo(i * R * 0.35 - R * 0.12, R * 0.05, i * R * 0.35, R * 0.4); g.stroke();
+    }
+    // Cabeça
+    const hx = running ? R * 1.0 : R * 0.55, hy = running ? -R * 0.25 : -R * 0.6;
+    g.fillStyle = '#9ba1a9';
+    g.beginPath(); g.arc(hx, hy, R * 0.5, 0, Math.PI * 2); g.fill();
+    // Orelhas (para trás quando irritado)
+    const earTilt = st.scared ? 0.6 : 0;
+    [[-0.25, 0], [0.2, 0.1]].forEach(([ex]) => {
+      g.save();
+      g.translate(hx + ex * R, hy - R * 0.35);
+      g.rotate(-earTilt);
+      g.fillStyle = '#7e848c';
+      g.beginPath(); g.moveTo(-R * 0.17, R * 0.05); g.lineTo(0, -R * 0.38); g.lineTo(R * 0.17, R * 0.05); g.closePath(); g.fill();
+      g.fillStyle = '#e7a9b4';
+      g.beginPath(); g.moveTo(-R * 0.08, 0); g.lineTo(0, -R * 0.22); g.lineTo(R * 0.08, 0); g.closePath(); g.fill();
+      g.restore();
+    });
+    // Olho (bravo quando irritado) e focinho
+    g.fillStyle = st.scared ? '#f2d14b' : '#9bd36b';
+    g.beginPath(); g.ellipse(hx + R * 0.22, hy - R * 0.05, R * 0.1, R * (st.scared ? 0.12 : 0.08), 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#1d2024';
+    g.beginPath(); g.ellipse(hx + R * 0.24, hy - R * 0.05, R * 0.03, R * 0.08, 0, 0, Math.PI * 2); g.fill();
+    if (st.scared) {
+      g.strokeStyle = '#2e3238';
+      g.lineWidth = Math.max(1.5, R * 0.06);
+      g.beginPath(); g.moveTo(hx + R * 0.08, hy - R * 0.22); g.lineTo(hx + R * 0.36, hy - R * 0.14); g.stroke();
+    }
+    g.fillStyle = '#e7a9b4';
+    g.beginPath(); g.arc(hx + R * 0.47, hy + R * 0.08, R * 0.06, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,.8)';
+    g.lineWidth = Math.max(1, R * 0.03);
+    g.beginPath();
+    g.moveTo(hx + R * 0.42, hy + R * 0.12); g.lineTo(hx + R * 0.85, hy + R * 0.05);
+    g.moveTo(hx + R * 0.42, hy + R * 0.16); g.lineTo(hx + R * 0.82, hy + R * 0.25);
+    g.stroke();
+    g.restore();
+    if (st.scared && st.run < 0.6) {
+      g.save();
+      g.globalAlpha = 1 - st.run / 0.6;
+      g.font = `800 ${Math.round(R * 0.5)}px "Baloo 2", system-ui, sans-serif`;
+      g.textAlign = 'center';
+      g.lineWidth = R * 0.1;
+      g.strokeStyle = '#0f2e2c';
+      g.strokeText('fsss!', x, y - R * 1.5);
+      g.fillStyle = '#e4e8ec';
+      g.fillText('fsss!', x, y - R * 1.5);
+      g.restore();
+    }
   }
 
   function drawCutscene(g, W, H, r, t, level) {
@@ -1758,16 +2115,7 @@
     g.fillStyle = '#e8dcc6';
     g.fillRect(0, floorY - 10, W, 10); // rodapé
 
-    const R = Math.min(H * 0.17, W * 0.2);
-    const legH = R * 0.35;
-    const bowlW = R * 1.3, bowlH = R * 0.65;
-    // Os dois cruzam a tela em cerca de 5 s; o Krug vai encurtando a distância
-    const gapAt = (tt) => R * Math.max(1.9, 2.7 - tt * 0.16);
-    const bx0 = -bowlW / 2;
-    const v = (W + R * 1.6 + bowlW / 2 + gapAt(5.3)) / 5.0;
-    const bxAt = (tt) => bx0 + v * (tt - 0.3);
-    const bx = bxAt(t);                           // tigela vai na frente
-    const kx = bx - gapAt(t);                     // Krug correndo atrás
+    const { R, legH, bowlW, bowlH, v, bxAt, bx, kx } = cutLayout(W, H, t);
     const hop = Math.abs(Math.sin(t * 8)) * R * 0.45;
     const by = floorY - bowlH / 2 - hop;
 
@@ -1871,6 +2219,12 @@
     }
     g.globalAlpha = 1;
 
+    // Gato gordinho mais à frente no chão (fase 10 em diante): a tigela e o Krug passam atrás dele
+    if (level >= 10) {
+      const st = cutCat(W, H, t);
+      if (st.x < W + st.R * 3) drawCatSide(g, st.x, floorY + R * 0.55, st.R, t, st);
+    }
+
     // Letreiro
     const ta = Math.min(1, t / 0.4) * Math.min(1, (6.0 - t) / 0.4);
     g.globalAlpha = Math.max(0, ta);
@@ -1915,7 +2269,8 @@
     $('#over-title').textContent = rec ? 'Krug campeão!' : 'O Krug cansou...';
     $('#over-photo').src = rec ? 'assets/foto-recorde.jpg' : 'assets/foto-fim.jpg';
     $('#over-photo').alt = rec ? 'Krug dormindo com o cachecol do Brasil' : 'Krug dormindo no sofá';
-    $('#over-text').textContent = `O má banho venceu desta vez. Você chegou à fase ${S.level} com ${S.score} pontos e ${S.stars} ${S.stars === 1 ? 'estrela' : 'estrelas'}.`;
+    const why = S.lastHurt === 'chocolate' ? 'O chocolate preto fez mal ao Krug.' : 'O má banho venceu desta vez.';
+    $('#over-text').textContent = `${why} Você chegou à fase ${S.level} com ${S.score} pontos e ${S.stars} ${S.stars === 1 ? 'estrela' : 'estrelas'}.`;
     $('#over-record').textContent = rec ? 'Novo recorde!' : `Recorde: ${S.best} pontos`;
     setTimeout(() => show('#screen-over'), 400);
   }
@@ -1991,9 +2346,11 @@
       stepKrug(dt);
       stepBaths(dt);
       stepCats(dt);
+      if (L.goalMoves) stepBowl(dt);
     }
     if (K.barkShake > 0) K.barkShake = Math.max(0, K.barkShake - dt);
     if (K.happyT > 0) K.happyT = Math.max(0, K.happyT - dt);
+    if (K.hopT > 0) K.hopT = Math.max(0, K.hopT - dt);
     if (K.bumpT > 0) K.bumpT = Math.max(0, K.bumpT - dt);
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
@@ -2031,13 +2388,26 @@
     const P = (v) => (v + 0.5) * TS;
 
     for (const z of L.suns) drawSun(ctx, z, TS, t);
-    drawBowl(ctx, P(L.goal.x), P(L.goal.y), TS, t);
+    {
+      // A tigela balança antes de fugir e aparece com um "pop" no lugar novo
+      const warn = L.bowlWarn > 0 ? 1 - L.bowlWarn / CFG.bowlWarnTime : 0;
+      const pop = L.bowlPop > 0 ? L.bowlPop / 0.45 : 0;
+      ctx.save();
+      ctx.translate(P(L.goal.x), P(L.goal.y));
+      if (warn) ctx.rotate(Math.sin(t * 40) * 0.25 * warn);
+      const sc = pop ? 1 + Math.sin(pop * Math.PI) * 0.35 - pop * 0.3 : 1;
+      ctx.scale(sc, sc);
+      drawBowl(ctx, 0, 0, TS, t);
+      ctx.restore();
+    }
 
     for (const [i, type] of L.items) {
       const x = i % L.W, y = (i / L.W) | 0;
       if (!inView(x, y)) continue;
       if (type === 'popoca') drawPopoca(ctx, P(x), P(y), TS, t);
       else if (type === 'pao') drawPao(ctx, P(x), P(y), TS, t);
+      else if (type === 'ovoBranco') drawEgg(ctx, P(x), P(y), TS, t, false);
+      else if (type === 'ovoPreto') drawEgg(ctx, P(x), P(y), TS, t, true);
       else drawCoberta(ctx, P(x), P(y), TS, t);
     }
 
@@ -2072,6 +2442,15 @@
     let kx = P(K.x), ky = P(K.y);
     if (K.scaredT > 0) { kx += Math.sin(t * 60) * TS * 0.06; ky += Math.cos(t * 47) * TS * 0.04; }
     if (K.barkShake > 0) { const k = K.barkShake / 0.15; ky -= Math.sin(k * Math.PI) * TS * 0.1; }
+    let hopScale = 1;
+    if (K.hopT > 0) {
+      const k = 1 - K.hopT / 0.6;
+      const up = Math.sin(k * Math.PI);
+      ctx.fillStyle = 'rgba(0,0,0,.18)';
+      ctx.beginPath(); ctx.ellipse(kx, ky + TS * 0.2, TS * 0.38 * (1 - up * 0.3), TS * 0.12, 0, 0, Math.PI * 2); ctx.fill();
+      ky -= up * TS * 0.55;
+      hopScale = 1 + up * 0.15;
+    }
     if (K.bumpT > 0) { const b = Math.sin((K.bumpT / 0.18) * Math.PI) * TS * 0.12; kx += K.bumpDir[0] * b; ky += K.bumpDir[1] * b; }
     const blink = K.invulnT > 0 && Math.floor(t * 10) % 2 === 0;
     const braveBlink = K.braveT > 0 && (K.braveT > 2 || Math.floor(t * 8) % 2 === 0);
@@ -2079,7 +2458,7 @@
     if (blink) ctx.globalAlpha = 0.35;
     const scale = S.mode === 'levelDone' ? 1 + Math.sin(t * 10) * 0.06 : 1;
     if (K.shield) drawWrap(ctx, kx, ky, TS * 0.47 * scale * (1 + K.shieldPop * 0.6), t);
-    drawCap(ctx, kx, ky, TS * 0.47 * scale, K.angle, face, { glow: braveBlink });
+    drawCap(ctx, kx, ky, TS * 0.47 * scale * hopScale, K.angle, face, { glow: braveBlink });
     if (K.queue && K.moving) drawQueueArrow(ctx, kx, ky, TS * 0.47, K.queue, t);
     ctx.restore();
 
@@ -2277,6 +2656,8 @@
       if (type === 'pao') drawPao(g, s / 2, s / 2, s * 1.1, 0);
       if (type === 'bath') drawBath(g, s / 2, s / 2, s * 1.05, 0);
       if (type === 'coberta') drawCoberta(g, s / 2, s / 2, s * 1.1, 0);
+      if (type === 'ovoBranco') drawEgg(g, s / 2, s / 2, s * 1.1, 0, false);
+      if (type === 'ovoPreto') drawEgg(g, s / 2, s / 2, s * 1.1, 0, true);
       if (type === 'cat') drawCat(g, s / 2 + 2, s / 2, s * 0.95, { face: -0.4, mode: 'sit', puff: 0, phase: 2 }, 0);
       if (type === 'sun') { g.fillStyle = '#c99a6b'; g.fillRect(0, 0, s, s); drawSunRect(g, 4, 4, s - 8, s - 8, s * 0.8, 0.5); }
     });
