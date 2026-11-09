@@ -17,6 +17,7 @@ Jogo web de labirinto visto de cima. O jogador conduz a tampinha de refrigerante
 | Pão do queijo | +50 pontos e coragem por 7 segundos: o Krug espanta o má banho (+30) |
 | Cobertinha | Protege o Krug de um toque do má banho (aparece a partir da fase 2; se já estiver com uma, vale +20) |
 | Raio de sol | O Krug para 1,6 s para se aquecer e depois segue na mesma direção (ou na que você escolher enquanto ele cochila). Aparece a partir da fase 2 |
+| Gato gordinho | A partir da fase 4 (dois a partir da fase 10). Se o Krug vê o gato no mesmo corredor reto, a até 4 casas e sem parede no meio, esquece de tudo: para e late por 2,5 s sem obedecer aos controles. Depois o gato foge ofendido para outro canto, e o Krug fica 4 s sem se distrair de novo. As casas vigiadas pelo gato ficam levemente avermelhadas |
 | Má banho | O Krug perde uma patinha e volta ao começo da fase |
 
 ### Estrelas

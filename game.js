@@ -18,6 +18,11 @@
     lateTurn: 0.45,      // tolerância (em casas) para virar logo depois de passar do cruzamento
     queueTime: 0.5,      // segundos que uma direção escolhida antes da hora fica guardada
     napTime: 1.6,        // segundos que o Krug fica parado se aquecendo no raio de sol
+    catSight: 4,         // casas em linha reta em que o Krug enxerga o gato
+    barkTime: 2.5,       // segundos latindo para o gato, sem controle
+    catCooldown: 4,      // segundos sem se distrair de novo depois de latir
+    catWalk: 1.1,        // casas por segundo do gato passeando
+    catFlee: 5.5,        // casas por segundo do gato fugindo ofendido
     lives: 3,
     braveTime: 7,        // segundos de coragem depois do pão do queijo
     scaredTime: 1.1,     // segundos tremendo depois do má banho
@@ -283,6 +288,30 @@
         },
       };
     },
+    hiss() { this.noise(0.55, 0.22, 4500, 0, 0.7); },
+    meow(delay = 0) {
+      if (!this.on || !this.ac) return;
+      const t = this.ac.currentTime + delay;
+      const o = this.ac.createOscillator();
+      const f = this.ac.createBiquadFilter();
+      const g = this.ac.createGain();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(480, t);
+      o.frequency.linearRampToValueAtTime(820, t + 0.18);
+      o.frequency.exponentialRampToValueAtTime(420, t + 0.55);
+      f.type = 'bandpass';
+      f.Q.value = 4;
+      f.frequency.setValueAtTime(900, t);
+      f.frequency.linearRampToValueAtTime(1700, t + 0.2);
+      f.frequency.exponentialRampToValueAtTime(800, t + 0.55);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.3, t + 0.05);
+      g.gain.setValueAtTime(0.3, t + 0.35);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+      o.connect(f).connect(g).connect(this.ac.destination);
+      o.start(t);
+      o.stop(t + 0.62);
+    },
     yawn() { this.tone(520, 0.7, 'sine', 0.1, 260); this.tone(780, 0.6, 'sine', 0.04, 390, 0.05); },
     coberta() { this.noise(0.18, 0.18, 600, 0, 0.6); [392, 523].forEach((f, i) => this.tone(f, 0.16, 'sine', 0.12, null, i * 0.08)); },
     shieldHit() { this.noise(0.4, 0.22, 700, 0, 0.7); this.tone(440, 0.25, 'sine', 0.12, 300); this.bark(0.25); },
@@ -522,10 +551,19 @@
     }
     const par = Math.ceil((dPar[goalIdx] / CFG.speed) * 1.8 + 5 + napZones.size * CFG.napTime);
 
+    // Gato gordinho: a partir da fase 4, longe do começo
+    const nCat = n >= 4 ? (n >= 10 ? 2 : 1) : 0;
+    const cats = [];
+    for (const c of shuffle(cells.slice())) {
+      if (cats.length >= nCat) break;
+      if (d0[c] < 10 || c === goalIdx) continue;
+      cats.push(makeCat(c % W, (c / W) | 0));
+    }
+
     return {
       n, m, W, H, g: m.g, start: { x: 1, y: 1 },
       goal: { x: goalIdx % W, y: (goalIdx / W) | 0 },
-      items, baths, idx, theme, par, popTotal: pc, suns, sunAt,
+      items, baths, idx, theme, par, popTotal: pc, suns, sunAt, cats,
     };
   }
 
@@ -548,6 +586,7 @@
   const K = {               // a tampinha do Krug
     cx: 1, cy: 1, x: 1, y: 1, dir: null, prog: 0, moving: false, queue: null, queueT: 0,
     napT: 0, napDir: null, sunZone: null, zzz: 0,
+    barkT: 0, barkEvery: 0, barkCat: null, catCooldown: 0, barkShake: 0,
     angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0, bumpDir: [0, 0], shield: false, shieldPop: 0,
   };
   const particles = [];
@@ -945,6 +984,106 @@
     ctx.restore();
   }
 
+  /** Tom avermelhado bem leve nas casas que o gato enxerga. */
+  function drawCatSight(g, c, s) {
+    const cx = Math.round(c.x), cy = Math.round(c.y);
+    g.save();
+    for (const [dx, dy] of D4) {
+      for (let i = 1; i <= CFG.catSight; i++) {
+        const x = cx + dx * i, y = cy + dy * i;
+        if (L.g[y][x] === 1) break;
+        g.fillStyle = `rgba(200,70,70,${0.13 * (1 - (i - 1) / (CFG.catSight + 1))})`;
+        g.fillRect(x * s, y * s, s, s);
+      }
+    }
+    g.restore();
+  }
+
+  /** Gato gordinho cinza, visto de cima. */
+  function drawCat(g, x, y, s, c, t) {
+    const R = s * 0.4;
+    const puff = c.puff || 0;
+    const moving = c.mode === 'walk' || c.mode === 'flee';
+    g.save();
+    g.translate(x, y);
+    g.fillStyle = 'rgba(0,0,0,.22)';
+    g.beginPath(); g.ellipse(s * 0.05, s * 0.08, R * 1.15, R * 1.0, 0, 0, Math.PI * 2); g.fill();
+    g.rotate(c.face + (moving ? Math.sin(t * (c.mode === 'flee' ? 22 : 8)) * 0.1 : 0));
+    // Rabo (estufado quando o Krug late)
+    const sw = Math.sin(t * (c.mode === 'sit' ? 2 : 5) + c.phase) * R * 0.6 * (1 - puff * 0.8);
+    g.lineCap = 'round';
+    g.strokeStyle = '#5f656d';
+    g.lineWidth = R * (0.3 + puff * 0.4);
+    g.beginPath(); g.moveTo(-R * 0.8, 0); g.quadraticCurveTo(-R * 1.5, sw, -R * 1.65, sw * 1.5 + R * 0.35); g.stroke();
+    if (puff > 0.3) {
+      g.strokeStyle = 'rgba(200,205,212,.7)';
+      g.lineWidth = Math.max(1, R * 0.06);
+      for (let k = 0; k < 7; k++) {
+        const a = k / 6;
+        const px = -R * 0.9 - a * R * 0.7, py = sw * a * 1.2 + R * 0.35 * a;
+        g.beginPath(); g.moveTo(px, py - R * 0.3 * puff); g.lineTo(px, py + R * 0.3 * puff); g.stroke();
+      }
+    }
+    // Patinhas aparecendo ao andar
+    if (moving) {
+      const st = Math.sin(t * (c.mode === 'flee' ? 24 : 9));
+      g.fillStyle = '#8a9098';
+      [[0.45, 0.62, 1], [0.45, -0.62, -1], [-0.45, 0.62, -1], [-0.45, -0.62, 1]].forEach(([px, py, ph]) => {
+        g.beginPath(); g.arc(px * R + st * ph * R * 0.18, py * R, R * 0.17, 0, Math.PI * 2); g.fill();
+      });
+    }
+    // Corpo gordinho
+    const k = 1 + puff * 0.12;
+    const body = g.createRadialGradient(-R * 0.3, -R * 0.3, R * 0.1, -R * 0.1, 0, R * 1.05);
+    body.addColorStop(0, '#c3c8ce');
+    body.addColorStop(1, '#7e848c');
+    g.fillStyle = body;
+    g.beginPath(); g.ellipse(-R * 0.1, 0, R * 1.0 * k, R * 0.85 * k, 0, 0, Math.PI * 2); g.fill();
+    // Listras
+    g.strokeStyle = 'rgba(70,75,82,.5)';
+    g.lineWidth = R * 0.12;
+    for (let i = -1; i <= 1; i++) {
+      const sx = -R * 0.15 + i * R * 0.38;
+      g.beginPath(); g.moveTo(sx, -R * 0.72); g.quadraticCurveTo(sx - R * 0.15, 0, sx, R * 0.72); g.stroke();
+    }
+    // Cabeça
+    g.fillStyle = '#9ba1a9';
+    g.beginPath(); g.arc(R * 0.85, 0, R * 0.5, 0, Math.PI * 2); g.fill();
+    // Orelhas
+    [1, -1].forEach((sg) => {
+      g.fillStyle = '#7e848c';
+      g.beginPath(); g.moveTo(R * 0.62, sg * R * 0.18); g.lineTo(R * 0.98, sg * R * 0.42); g.lineTo(R * 0.6, sg * R * 0.68); g.closePath(); g.fill();
+      g.fillStyle = '#e7a9b4';
+      g.beginPath(); g.moveTo(R * 0.67, sg * R * 0.28); g.lineTo(R * 0.88, sg * R * 0.42); g.lineTo(R * 0.66, sg * R * 0.56); g.closePath(); g.fill();
+    });
+    // Olhos (fechados quando está sentado tranquilo)
+    const calm = c.mode === 'sit' && Math.sin(t * 0.8 + c.phase) > 0.3;
+    [1, -1].forEach((sg) => {
+      if (calm) {
+        g.strokeStyle = '#2e3238';
+        g.lineWidth = Math.max(1, R * 0.06);
+        g.beginPath(); g.arc(R * 1.05, sg * R * 0.2, R * 0.09, 0.2, Math.PI - 0.2); g.stroke();
+      } else {
+        g.fillStyle = c.mode === 'stare' ? '#f2d14b' : '#9bd36b';
+        g.beginPath(); g.ellipse(R * 1.08, sg * R * 0.2, R * 0.1, R * 0.12, 0, 0, Math.PI * 2); g.fill();
+        g.fillStyle = '#1d2024';
+        g.beginPath(); g.ellipse(R * 1.1, sg * R * 0.2, R * 0.03, R * 0.09, 0, 0, Math.PI * 2); g.fill();
+      }
+    });
+    // Focinho e bigodes
+    g.fillStyle = '#e7a9b4';
+    g.beginPath(); g.arc(R * 1.3, 0, R * 0.07, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,.75)';
+    g.lineWidth = Math.max(1, R * 0.03);
+    [1, -1].forEach((sg) => {
+      g.beginPath();
+      g.moveTo(R * 1.25, sg * R * 0.1); g.lineTo(R * 1.6, sg * R * 0.35);
+      g.moveTo(R * 1.25, sg * R * 0.12); g.lineTo(R * 1.55, sg * R * 0.5);
+      g.stroke();
+    });
+    g.restore();
+  }
+
   /** Faixa de sol no chão, entrando pela janela na diagonal. */
   function drawSun(g, z, s, t) {
     const xs = z.tiles.map((p) => p[0]), ys = z.tiles.map((p) => p[1]);
@@ -1096,7 +1235,7 @@
   /** Para o Krug na próxima casa (o movimento é de casa em casa). */
   function stop() {
     Snd.init();
-    if (S.mode !== 'play') return;
+    if (S.mode !== 'play' || K.barkT > 0) return;
     K.queue = null;
     if (K.moving) K.stopReq = true;
     if (K.napT > 0) K.napDir = null;
@@ -1108,6 +1247,7 @@
     K.stopReq = false;
     const d = DIRS[name];
     if (!d || K.scaredT > 0) return;
+    if (K.barkT > 0) return; // latindo para o gato, esqueceu de tudo
     if (K.napT > 0) { K.napDir = d; return; } // guarda para quando acordar
     if (!K.moving) {
       if (isOpen(K.cx, K.cy, d)) { K.dir = d; K.moving = true; K.prog = 0; K.queue = null; }
@@ -1200,6 +1340,7 @@
 
   let napHintShown = false;
   function nap() {
+    if (K.barkT > 0) return; // latindo para o gato nem percebe o sol
     K.napT = CFG.napTime;
     K.napDir = K.dir;
     K.zzz = 0;
@@ -1218,6 +1359,7 @@
 
   function stepKrug(dt) {
     if (K.scaredT > 0) return;
+    if (K.barkT > 0 && !K.moving) { K.x = K.cx; K.y = K.cy; return; }
     if (K.napT > 0) {
       K.napT -= dt;
       K.zzz -= dt;
@@ -1293,7 +1435,163 @@
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Gato gordinho: se o Krug o vê no mesmo corredor, esquece de tudo e late
+  // ---------------------------------------------------------------------------
+  function makeCat(x, y) {
+    return {
+      cx: x, cy: y, x, y, dir: null, prog: 0, mode: 'sit', t: 1 + Math.random() * 2, path: null,
+      face: Math.random() * Math.PI * 2, puff: 0, phase: Math.random() * 6,
+    };
+  }
+
+  function lerpAngle(a, b, k) {
+    let d = b - a;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    return a + d * k;
+  }
+
+  /** O Krug enxerga o gato se estiverem no mesmo corredor reto, perto e sem parede no meio. */
+  function catSees(c) {
+    if (c.mode === 'flee') return false;
+    const kx = Math.round(K.x), ky = Math.round(K.y);
+    const cx = Math.round(c.x), cy = Math.round(c.y);
+    if (kx !== cx && ky !== cy) return false;
+    const dist = Math.abs(kx - cx) + Math.abs(ky - cy);
+    if (dist > CFG.catSight) return false;
+    const sx = Math.sign(cx - kx), sy = Math.sign(cy - ky);
+    for (let i = 1; i < dist; i++) if (L.g[ky + sy * i][kx + sx * i] === 1) return false;
+    return true;
+  }
+
+  function catChooseDir(c) {
+    const open = D4.filter((d) => isOpen(c.cx, c.cy, d));
+    const fwd = open.filter((d) => !c.dir || !opposite(d, c.dir));
+    const opts = fwd.length ? fwd : open;
+    return opts.length ? opts[(Math.random() * opts.length) | 0] : null;
+  }
+
+  /** Caminho para um canto longe do Krug, para onde o gato foge ofendido. */
+  function catFleePath(c) {
+    const d = bfs(L.m, c.cx, c.cy);
+    const kx = Math.round(K.x), ky = Math.round(K.y);
+    const cand = [];
+    for (let i = 0; i < d.length; i++) {
+      if (d[i] < 8 || d[i] > 30) continue;
+      const x = i % L.W, y = (i / L.W) | 0;
+      if (x % 2 === 0 || y % 2 === 0) continue;
+      if (Math.abs(x - kx) + Math.abs(y - ky) < 10) continue;
+      cand.push(i);
+    }
+    if (!cand.length) return [];
+    let p = cand[(Math.random() * cand.length) | 0];
+    const path = [];
+    while (d[p] > 0) {
+      path.push(p);
+      const x = p % L.W, y = (p / L.W) | 0;
+      const prev = D4.map(([dx, dy]) => (x + dx) + (y + dy) * L.W).find((q) => d[q] === d[p] - 1);
+      if (prev === undefined) break;
+      p = prev;
+    }
+    return path.reverse();
+  }
+
+  function catDirTo(c, idx) {
+    return [(idx % L.W) - c.cx, ((idx / L.W) | 0) - c.cy];
+  }
+
+  let catHintShown = false;
+  function startBark(c) {
+    K.barkT = CFG.barkTime;
+    K.barkEvery = 0.15;
+    K.barkCat = c;
+    K.queue = null;
+    if (K.moving) K.stopReq = true; // termina a casa em que está e para
+    if (K.napT > 0) { K.napT = 0; K.napDir = null; }
+    // O gato para e encara o Krug, com o rabo estufado
+    c.cx = Math.round(c.x); c.cy = Math.round(c.y);
+    c.x = c.cx; c.y = c.cy; c.prog = 0; c.dir = null;
+    c.mode = 'stare';
+    c.puff = 1;
+    c.face = Math.atan2(Math.round(K.y) - c.cy, Math.round(K.x) - c.cx);
+    floatText(c.x + 0.5, c.y + 0.1, 'fsss!', '#e4e8ec');
+    Snd.hiss();
+    if (!catHintShown) { catHintShown = true; banner('Gato gordinho!', 'O Krug esqueceu de tudo'); }
+  }
+
+  function endBark() {
+    K.barkT = 0;
+    K.catCooldown = CFG.catCooldown;
+    const c = K.barkCat;
+    K.barkCat = null;
+    if (!c) return;
+    c.path = catFleePath(c);
+    const nxt = c.path.shift();
+    if (nxt === undefined) { c.mode = 'sit'; c.t = 1; c.dir = null; return; }
+    c.mode = 'flee';
+    c.dir = catDirTo(c, nxt);
+    c.prog = 0;
+    c.puff = 1;
+    burst(c.x + 0.5, c.y + 0.5, '#9aa0a8', 10, 3, 0.08);
+    Snd.meow();
+  }
+
+  function stepCats(dt) {
+    for (const c of L.cats) {
+      c.phase += dt;
+      if (c.mode !== 'stare') c.puff = Math.max(0, c.puff - dt * 0.8);
+      if (c.mode === 'stare') continue;
+      if (c.mode === 'sit') {
+        c.t -= dt;
+        if (c.t <= 0) { c.dir = catChooseDir(c); c.prog = 0; c.mode = c.dir ? 'walk' : 'sit'; c.t = 1; }
+      } else {
+        const speed = c.mode === 'flee' ? CFG.catFlee : CFG.catWalk;
+        let dist = speed * dt;
+        while (dist > 0 && c.dir) {
+          const d = Math.min(dist, 1 - c.prog);
+          c.prog += d;
+          dist -= d;
+          if (c.prog >= 1 - 1e-9) {
+            c.cx += c.dir[0]; c.cy += c.dir[1]; c.prog = 0;
+            if (c.mode === 'flee') {
+              const nxt = c.path && c.path.shift();
+              if (nxt === undefined) { c.mode = 'sit'; c.t = 2 + Math.random() * 2; c.dir = null; break; }
+              c.dir = catDirTo(c, nxt);
+            } else {
+              const isCell = c.cx % 2 === 1 && c.cy % 2 === 1;
+              if (isCell && Math.random() < 0.18) { c.mode = 'sit'; c.t = 1.5 + Math.random() * 2.5; c.dir = null; break; }
+              c.dir = catChooseDir(c);
+            }
+          }
+        }
+        if (c.dir) c.face = lerpAngle(c.face, Math.atan2(c.dir[1], c.dir[0]), Math.min(1, dt * 8));
+      }
+      c.x = c.cx + (c.dir ? c.dir[0] * c.prog : 0);
+      c.y = c.cy + (c.dir ? c.dir[1] * c.prog : 0);
+    }
+
+    // Latindo para o gato
+    if (K.barkT > 0) {
+      K.barkT -= dt;
+      K.barkEvery -= dt;
+      if (K.barkEvery <= 0 && !K.moving) {
+        K.barkEvery = 0.4 + Math.random() * 0.15;
+        Snd.bark(0, { rate: 0.95 + Math.random() * 0.2, vol: 0.8 });
+        floatText(K.x + 0.5 + (Math.random() - 0.5) * 0.5, K.y + 0.05, 'au!', '#ffe08a');
+        K.barkShake = 0.15;
+      }
+      if (K.barkCat) K.barkCat.face = Math.atan2(K.y - K.barkCat.cy, K.x - K.barkCat.cx);
+      if (K.barkT <= 0) endBark();
+      return;
+    }
+    if (K.catCooldown > 0) { K.catCooldown = Math.max(0, K.catCooldown - dt); return; }
+    if (K.scaredT > 0 || K.invulnT > 0) return;
+    for (const c of L.cats) if (catSees(c)) { startBark(c); break; }
+  }
+
   function hit(b) {
+    if (K.barkT > 0) endBark();
     K.saved = false;
     K.napT = 0;
     K.napDir = null;
@@ -1327,6 +1625,7 @@
       cx: L.start.x, cy: L.start.y, x: L.start.x, y: L.start.y, dir: null, prog: 0, moving: false,
       queue: null, angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0, saved: false, stopReq: false,
       napT: 0, napDir: null, sunZone: null, zzz: 0,
+      barkT: 0, barkEvery: 0, barkCat: null, catCooldown: 0, barkShake: 0,
     });
     particles.length = 0;
     floaters.length = 0;
@@ -1691,7 +1990,9 @@
       if (K.invulnT > 0) K.invulnT = Math.max(0, K.invulnT - dt);
       stepKrug(dt);
       stepBaths(dt);
+      stepCats(dt);
     }
+    if (K.barkShake > 0) K.barkShake = Math.max(0, K.barkShake - dt);
     if (K.happyT > 0) K.happyT = Math.max(0, K.happyT - dt);
     if (K.bumpT > 0) K.bumpT = Math.max(0, K.bumpT - dt);
     for (let i = particles.length - 1; i >= 0; i--) {
@@ -1755,14 +2056,22 @@
       drawBath(ctx, P(b.x), P(b.y), TS, b.phase, b.moving);
     }
 
+    // Gatos e o pedaço de corredor que eles vigiam
+    for (const c of L.cats) {
+      if (c.mode !== 'flee') drawCatSight(ctx, c, TS);
+    }
+    for (const c of L.cats) drawCat(ctx, P(c.x), P(c.y), TS, c, t);
+
     // Krug
     let face = IMG.normal;
     if (K.scaredT > 0) face = IMG.scared || face;
+    else if (K.barkT > 0) face = IMG.brave || face;
     else if (K.braveT > 0) face = IMG.brave || face;
     else if (K.napT > 0) face = IMG.sleepy || face;
     else if (K.happyT > 0) face = IMG.happy || face;
     let kx = P(K.x), ky = P(K.y);
     if (K.scaredT > 0) { kx += Math.sin(t * 60) * TS * 0.06; ky += Math.cos(t * 47) * TS * 0.04; }
+    if (K.barkShake > 0) { const k = K.barkShake / 0.15; ky -= Math.sin(k * Math.PI) * TS * 0.1; }
     if (K.bumpT > 0) { const b = Math.sin((K.bumpT / 0.18) * Math.PI) * TS * 0.12; kx += K.bumpDir[0] * b; ky += K.bumpDir[1] * b; }
     const blink = K.invulnT > 0 && Math.floor(t * 10) % 2 === 0;
     const braveBlink = K.braveT > 0 && (K.braveT > 2 || Math.floor(t * 8) % 2 === 0);
@@ -1968,6 +2277,7 @@
       if (type === 'pao') drawPao(g, s / 2, s / 2, s * 1.1, 0);
       if (type === 'bath') drawBath(g, s / 2, s / 2, s * 1.05, 0);
       if (type === 'coberta') drawCoberta(g, s / 2, s / 2, s * 1.1, 0);
+      if (type === 'cat') drawCat(g, s / 2 + 2, s / 2, s * 0.95, { face: -0.4, mode: 'sit', puff: 0, phase: 2 }, 0);
       if (type === 'sun') { g.fillStyle = '#c99a6b'; g.fillRect(0, 0, s, s); drawSunRect(g, 4, 4, s - 8, s - 8, s * 0.8, 0.5); }
     });
     const tc = $('#title-cap');
