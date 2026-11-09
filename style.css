@@ -84,9 +84,12 @@ html, body {
 /* ---------- Direcional (só em telas de toque) ---------- */
 #dpad { display: none; }
 .touch #dpad {
+  /* Botões grandes para o polegar; encolhem um pouco em telas baixas */
+  --bw: clamp(64px, 22vw, 92px);
+  --bh: clamp(50px, 8vh, 68px);
   display: grid;
-  grid-template-columns: repeat(3, 58px);
-  grid-template-rows: repeat(3, 42px);
+  grid-template-columns: repeat(3, var(--bw));
+  grid-template-rows: repeat(3, var(--bh));
   grid-template-areas: ". up ." "left stop right" ". down .";
   justify-content: center;
   gap: 6px;
@@ -94,20 +97,20 @@ html, body {
   background: var(--teal-dark);
 }
 #dpad button {
-  border: 0; border-radius: 14px;
+  border: 0; border-radius: 16px;
   background: rgba(255, 255, 255, .2);
   display: grid; place-items: center;
   touch-action: none; padding: 0;
 }
 #dpad button:active, #dpad button.pressed { background: rgba(255, 255, 255, .4); }
-#dpad svg { width: 26px; height: 26px; fill: #fff; }
+#dpad svg { width: 46px; height: 46px; fill: #fff; }
 #dpad [data-dir="up"] { grid-area: up; }
 #dpad [data-dir="left"] { grid-area: left; }
 #dpad [data-dir="right"] { grid-area: right; }
 #dpad [data-dir="down"] { grid-area: down; }
 #dpad [data-dir="stop"] { grid-area: stop; background: rgba(230, 57, 70, .55); }
 #dpad [data-dir="stop"]:active, #dpad [data-dir="stop"].pressed { background: rgba(230, 57, 70, .85); }
-#dpad [data-dir="stop"] svg { width: 20px; height: 20px; }
+#dpad [data-dir="stop"] svg { width: 28px; height: 28px; }
 
 /* ---------- Telas sobrepostas ---------- */
 .overlay {
