@@ -16,6 +16,7 @@ Jogo web de labirinto visto de cima. O jogador conduz a tampinha de refrigerante
 | Popoca | +10 pontos |
 | Pão do queijo | +50 pontos e coragem por 7 segundos: o Krug espanta o má banho (+30) |
 | Cobertinha | Protege o Krug de um toque do má banho (aparece a partir da fase 2; se já estiver com uma, vale +20) |
+| Raio de sol | O Krug para 1,6 s para se aquecer e depois segue na mesma direção (ou na que você escolher enquanto ele cochila). Aparece a partir da fase 2 |
 | Má banho | O Krug perde uma patinha e volta ao começo da fase |
 
 ### Estrelas
@@ -25,6 +26,10 @@ Cada fase vale até 3 estrelas: chegar à tigela, comer todas as popocas e chega
 ### Cômodos
 
 A cada 5 fases o Krug muda de cômodo: sala, quarto, cozinha e banheiro, e depois o ciclo recomeça. O banheiro tem mais má banho.
+
+### Intervalo
+
+A cada 5 fases completas, ao tocar em "Próxima fase", aparece uma animação do Krug grande correndo atrás da tigela de papá, com uma musiquinha original. Um toque, Enter ou a barra de espaço pulam a animação.
 
 ### Patinhas
 

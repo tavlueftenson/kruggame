@@ -17,6 +17,7 @@
     speed: 7,            // casas por segundo da tampinha
     lateTurn: 0.45,      // tolerância (em casas) para virar logo depois de passar do cruzamento
     queueTime: 0.5,      // segundos que uma direção escolhida antes da hora fica guardada
+    napTime: 1.6,        // segundos que o Krug fica parado se aquecendo no raio de sol
     lives: 3,
     braveTime: 7,        // segundos de coragem depois do pão do queijo
     scaredTime: 1.1,     // segundos tremendo depois do má banho
@@ -57,6 +58,7 @@
     loadImg('scared', 'assets/krug-scared.jpg'),
     loadImg('brave', 'assets/krug-brave.jpg'),
     loadImg('happy', 'assets/krug-happy.jpg'),
+    loadImg('sleepy', 'assets/krug-sleepy.jpg'),
   ]);
 
   // ---------------------------------------------------------------------------
@@ -197,6 +199,91 @@
     },
     bowl() { [523, 659, 784, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.16, 'triangle', 0.15, null, i * 0.1)); this.doubleBark(0.65); },
     bump() { this.tone(130, 0.07, 'square', 0.05, 90); },
+    /**
+     * Musiquinha original do intervalo: melodia em onda quadrada, baixo em onda
+     * triangular e percussão de ruído, 4 compassos a 168 bpm. Retorna { stop }.
+     */
+    music() {
+      const none = { stop() {}, duration: 6 };
+      if (!this.on || !this.ac) return none;
+      const ac = this.ac;
+      const master = ac.createGain();
+      master.gain.value = 0.9;
+      master.connect(ac.destination);
+      const t0 = ac.currentTime + 0.08;
+      const e = 60 / 168 / 2; // colcheia
+      const hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+      const note = (m, start, dur, type, vol) => {
+        const o = ac.createOscillator();
+        const g = ac.createGain();
+        o.type = type;
+        o.frequency.setValueAtTime(hz(m), start);
+        g.gain.setValueAtTime(0.0001, start);
+        g.gain.exponentialRampToValueAtTime(vol, start + 0.01);
+        g.gain.setValueAtTime(vol, start + dur * 0.6);
+        g.gain.exponentialRampToValueAtTime(0.0001, start + dur * 0.95);
+        o.connect(g).connect(master);
+        o.start(start);
+        o.stop(start + dur);
+      };
+      const C5 = 72, D5 = 74, E5 = 76, F5 = 77, G5 = 79, A5 = 81, B5 = 83, C6 = 84, D6 = 86;
+      // [nota, duração em colcheias]
+      const melody = [
+        [C5, 1], [E5, 1], [G5, 1], [C6, 1], [A5, 1], [G5, 1], [E5, 1], [G5, 1],
+        [F5, 1], [A5, 1], [C6, 1], [A5, 1], [G5, 1], [E5, 1], [D5, 1], [E5, 1],
+        [C5, 1], [E5, 1], [G5, 1], [C6, 1], [D6, 1], [C6, 1], [B5, 1], [A5, 1],
+        [G5, 1], [G5, 1], [A5, 1], [B5, 1], [C6, 4],
+      ];
+      let at = t0;
+      for (const [m, len] of melody) {
+        note(m, at, e * len, 'square', 0.07);
+        note(m - 12, at, e * len, 'triangle', 0.05); // reforço uma oitava abaixo
+        at += e * len;
+      }
+      const C3 = 48, D3 = 50, E3 = 52, F3 = 53, G3 = 55, G2 = 43, C4 = 60, D4 = 62;
+      const bass = [C3, G3, E3, G3, F3, C4, G3, D4, C3, G3, F3, G3, G2, D3];
+      bass.forEach((m, i) => note(m, t0 + i * 2 * e, e * 1.8, 'triangle', 0.22));
+      note(C3, t0 + 14 * 2 * e, e * 4, 'triangle', 0.22);
+      // Percussão: bumbo nos tempos 1 e 3, chimbal nos contratempos
+      const beats = 16;
+      for (let b = 0; b < beats; b++) {
+        const bt = t0 + b * 2 * e;
+        if (b % 2 === 0) {
+          const o = ac.createOscillator();
+          const g = ac.createGain();
+          o.frequency.setValueAtTime(150, bt);
+          o.frequency.exponentialRampToValueAtTime(45, bt + 0.12);
+          g.gain.setValueAtTime(0.35, bt);
+          g.gain.exponentialRampToValueAtTime(0.0001, bt + 0.14);
+          o.connect(g).connect(master);
+          o.start(bt); o.stop(bt + 0.15);
+        }
+        const len = Math.floor(ac.sampleRate * 0.04);
+        const buf = ac.createBuffer(1, len, ac.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+        const src = ac.createBufferSource();
+        src.buffer = buf;
+        const f = ac.createBiquadFilter();
+        f.type = 'highpass'; f.frequency.value = 6000;
+        const g = ac.createGain();
+        g.gain.value = 0.12;
+        src.connect(f).connect(g).connect(master);
+        src.start(bt + e);
+      }
+      const total = (at - t0);
+      return {
+        duration: total,
+        stop() {
+          try {
+            master.gain.cancelScheduledValues(ac.currentTime);
+            master.gain.setTargetAtTime(0, ac.currentTime, 0.04);
+            setTimeout(() => master.disconnect(), 400);
+          } catch (err) { /* já parou */ }
+        },
+      };
+    },
+    yawn() { this.tone(520, 0.7, 'sine', 0.1, 260); this.tone(780, 0.6, 'sine', 0.04, 390, 0.05); },
     coberta() { this.noise(0.18, 0.18, 600, 0, 0.6); [392, 523].forEach((f, i) => this.tone(f, 0.16, 'sine', 0.12, null, i * 0.08)); },
     shieldHit() { this.noise(0.4, 0.22, 700, 0, 0.7); this.tone(440, 0.25, 'sine', 0.12, 300); this.bark(0.25); },
     star(delay, i) { this.tone(880 + i * 220, 0.18, 'triangle', 0.14, null, delay); this.tone(1320 + i * 330, 0.12, 'sine', 0.07, null, delay + 0.05); },
@@ -280,6 +367,26 @@
     return n;
   }
 
+  /** Trechos retos de corredor (horizontais e verticais) com pelo menos minLen casas. */
+  function straightRuns(m, minLen) {
+    const { W, H } = m;
+    const segs = [];
+    const scan = (horizontal) => {
+      const A = horizontal ? H : W, B = horizontal ? W : H;
+      for (let a = 1; a < A - 1; a++) {
+        let run = [];
+        for (let b = 0; b < B; b++) {
+          const x = horizontal ? b : a, y = horizontal ? a : b;
+          if (m.g[y][x] === 0) run.push([x, y]);
+          else { if (run.length >= minLen) segs.push({ tiles: run, horizontal }); run = []; }
+        }
+      }
+    };
+    scan(true);
+    scan(false);
+    return segs;
+  }
+
   /** Monta uma fase: labirinto, tigela, petiscos e banhos. */
   function buildLevel(n) {
     const portrait = stage.clientHeight >= stage.clientWidth;
@@ -347,20 +454,7 @@
     // Má banho andando: patrulha um corredor reto, a partir da fase 3
     const nMoving = n >= 3 ? Math.min(Math.floor((n - 1) / 2), 7) : 0;
     if (nMoving) {
-      const segs = [];
-      const scan = (horizontal) => {
-        const A = horizontal ? H : W, B = horizontal ? W : H;
-        for (let a = 1; a < A - 1; a++) {
-          let run = [];
-          for (let b = 0; b < B; b++) {
-            const x = horizontal ? b : a, y = horizontal ? a : b;
-            if (m.g[y][x] === 0) run.push([x, y]);
-            else { if (run.length >= 3) segs.push({ tiles: run, horizontal }); run = []; }
-          }
-        }
-      };
-      scan(true);
-      scan(false);
+      const segs = straightRuns(m, 3);
       const used = new Set(blocked);
       let placed = 0;
       for (const s of shuffle(segs)) {
@@ -388,8 +482,24 @@
       }
     }
 
-    // Popoca espalhada pelo resto do labirinto
     const bathSet = new Set(baths.filter((b) => !b.moving).map((b) => idx(b.x, b.y)));
+
+    // Raio de sol: faixas de 2 ou 3 casas num corredor reto, a partir da fase 2
+    const suns = [];
+    const sunAt = new Map();
+    const nSun = n >= 2 ? Math.min(1 + Math.floor(n / 3), 6) : 0;
+    for (const r of shuffle(straightRuns(m, 3))) {
+      if (suns.length >= nSun) break;
+      const len = Math.min(r.tiles.length, Math.random() < 0.5 ? 2 : 3);
+      const off = (Math.random() * (r.tiles.length - len + 1)) | 0;
+      const tiles = r.tiles.slice(off, off + len);
+      const ids = tiles.map(([x, y]) => idx(x, y));
+      if (ids.some((p) => sunAt.has(p) || bathSet.has(p) || p === goalIdx || d0[p] < 3)) continue;
+      ids.forEach((p) => sunAt.set(p, suns.length));
+      suns.push({ tiles, horizontal: r.horizontal, phase: Math.random() * 6 });
+    }
+
+    // Popoca espalhada pelo resto do labirinto
     const nPop = Math.round(cells.length * 0.28);
     let pc = 0;
     for (const c of pool) {
@@ -401,12 +511,21 @@
 
     // Tempo para a terceira estrela: folgado em relação ao caminho mais curto
     const dPar = bfs(m, 1, 1, blocked);
-    const par = Math.ceil((dPar[goalIdx] / CFG.speed) * 1.8 + 5);
+    // Conta as sonecas no sol que o caminho mais curto obriga
+    const napZones = new Set();
+    for (let p = goalIdx; dPar[p] > 0;) {
+      if (sunAt.has(p)) napZones.add(sunAt.get(p));
+      const x = p % W, y = (p / W) | 0;
+      const nb = D4.map(([dx, dy]) => (x + dx) + (y + dy) * W).find((q) => dPar[q] === dPar[p] - 1);
+      if (nb === undefined) break;
+      p = nb;
+    }
+    const par = Math.ceil((dPar[goalIdx] / CFG.speed) * 1.8 + 5 + napZones.size * CFG.napTime);
 
     return {
       n, m, W, H, g: m.g, start: { x: 1, y: 1 },
       goal: { x: goalIdx % W, y: (goalIdx / W) | 0 },
-      items, baths, idx, theme, par, popTotal: pc,
+      items, baths, idx, theme, par, popTotal: pc, suns, sunAt,
     };
   }
 
@@ -428,6 +547,7 @@
   let L = null;             // fase atual
   const K = {               // a tampinha do Krug
     cx: 1, cy: 1, x: 1, y: 1, dir: null, prog: 0, moving: false, queue: null, queueT: 0,
+    napT: 0, napDir: null, sunZone: null, zzz: 0,
     angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0, bumpDir: [0, 0], shield: false, shieldPop: 0,
   };
   const particles = [];
@@ -825,6 +945,44 @@
     ctx.restore();
   }
 
+  /** Faixa de sol no chão, entrando pela janela na diagonal. */
+  function drawSun(g, z, s, t) {
+    const xs = z.tiles.map((p) => p[0]), ys = z.tiles.map((p) => p[1]);
+    const x0 = Math.min(...xs) * s, y0 = Math.min(...ys) * s;
+    const w = (Math.max(...xs) + 1) * s - x0, h = (Math.max(...ys) + 1) * s - y0;
+    drawSunRect(g, x0, y0, w, h, s, t + z.phase);
+  }
+
+  function drawSunRect(g, x0, y0, w, h, s, t) {
+    g.save();
+    g.beginPath();
+    g.rect(x0, y0, w, h);
+    g.clip();
+    const a = 0.42 + Math.sin(t * 1.6) * 0.06;
+    g.fillStyle = `rgba(255,205,70,${a})`;
+    g.fillRect(x0, y0, w, h);
+    // Faixas mais claras na diagonal
+    g.fillStyle = 'rgba(255,250,215,.45)';
+    const step = s * 0.7;
+    for (let k = -h; k < w + h; k += step) {
+      g.beginPath();
+      g.moveTo(x0 + k, y0 + h);
+      g.lineTo(x0 + k + h * 0.6, y0);
+      g.lineTo(x0 + k + h * 0.6 + s * 0.28, y0);
+      g.lineTo(x0 + k + s * 0.28, y0 + h);
+      g.closePath();
+      g.fill();
+    }
+    // Poeirinha brilhando no sol
+    g.fillStyle = 'rgba(255,255,255,.8)';
+    for (let i = 0; i < 5; i++) {
+      const px = x0 + ((i * 0.37 + t * 0.05 * (1 + i % 3)) % 1) * w;
+      const py = y0 + ((i * 0.61 + Math.sin(t * 0.7 + i) * 0.1 + 1) % 1) * h;
+      g.beginPath(); g.arc(px, py, Math.max(1, s * 0.03), 0, Math.PI * 2); g.fill();
+    }
+    g.restore();
+  }
+
   /** Setinha amarela mostrando a direção já escolhida. */
   function drawQueueArrow(g, x, y, R, d, t) {
     const ang = Math.atan2(d[1], d[0]);
@@ -941,6 +1099,7 @@
     if (S.mode !== 'play') return;
     K.queue = null;
     if (K.moving) K.stopReq = true;
+    if (K.napT > 0) K.napDir = null;
   }
 
   function input(name) {
@@ -949,6 +1108,7 @@
     K.stopReq = false;
     const d = DIRS[name];
     if (!d || K.scaredT > 0) return;
+    if (K.napT > 0) { K.napDir = d; return; } // guarda para quando acordar
     if (!K.moving) {
       if (isOpen(K.cx, K.cy, d)) { K.dir = d; K.moving = true; K.prog = 0; K.queue = null; }
       else { K.bumpT = 0.18; K.bumpDir = d; Snd.bump(); }
@@ -1028,11 +1188,43 @@
       Snd.coberta();
       updateHud();
     }
-    if (K.cx === L.goal.x && K.cy === L.goal.y) levelDone();
+    if (K.cx === L.goal.x && K.cy === L.goal.y) { levelDone(); return; }
+    // Raio de sol: ao entrar numa faixa, o Krug para um instante para se aquecer
+    const z = L.sunAt.get(i);
+    if (z === undefined) K.sunZone = null;
+    else if (K.sunZone !== z) {
+      K.sunZone = z;
+      nap();
+    }
+  }
+
+  let napHintShown = false;
+  function nap() {
+    K.napT = CFG.napTime;
+    K.napDir = K.dir;
+    K.zzz = 0;
+    K.queue = null;
+    K.stopReq = false;
+    if (!napHintShown) { napHintShown = true; banner('Que solzinho bom...', 'O Krug para um pouco para se aquecer'); }
+    Snd.yawn();
+  }
+
+  function wake() {
+    K.napT = 0;
+    const d = K.napDir;
+    K.napDir = null;
+    if (d && isOpen(K.cx, K.cy, d)) { K.dir = d; K.moving = true; K.prog = 0; }
   }
 
   function stepKrug(dt) {
     if (K.scaredT > 0) return;
+    if (K.napT > 0) {
+      K.napT -= dt;
+      K.zzz -= dt;
+      if (K.zzz <= 0) { K.zzz = 0.45; floatText(K.x + 0.75, K.y + 0.2, 'z', '#ffffff'); }
+      if (K.napT <= 0) wake();
+      if (K.napT > 0) { K.x = K.cx; K.y = K.cy; return; }
+    }
     let dist = CFG.speed * dt;
     while (dist > 0 && K.moving) {
       const d = Math.min(dist, 1 - K.prog);
@@ -1045,7 +1237,7 @@
         K.cy += K.dir[1];
         K.prog = 0;
         arrive();
-        if (S.mode !== 'play') { K.moving = false; break; }
+        if (S.mode !== 'play' || K.napT > 0) { K.moving = false; break; }
         const next = decide();
         if (next) K.dir = next; else K.moving = false;
       }
@@ -1103,6 +1295,8 @@
 
   function hit(b) {
     K.saved = false;
+    K.napT = 0;
+    K.napDir = null;
     S.lives--;
     K.scaredT = CFG.scaredTime;
     K.moving = false;
@@ -1120,6 +1314,7 @@
     if (S.lives <= 0) { gameOver(); return; }
     K.cx = L.start.x; K.cy = L.start.y; K.x = K.cx; K.y = K.cy;
     K.prog = 0; K.dir = null;
+    K.sunZone = null;
     K.invulnT = CFG.invulnTime;
   }
 
@@ -1131,6 +1326,7 @@
     Object.assign(K, {
       cx: L.start.x, cy: L.start.y, x: L.start.x, y: L.start.y, dir: null, prog: 0, moving: false,
       queue: null, angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0, saved: false, stopReq: false,
+      napT: 0, napDir: null, sunZone: null, zzz: 0,
     });
     particles.length = 0;
     floaters.length = 0;
@@ -1191,6 +1387,212 @@
       got.forEach((ok, i) => { if (ok) Snd.star(i * 0.25 + 0.15, i); });
     }, 900);
     setTimeout(() => show('#screen-level'), 900);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Intervalo a cada 5 fases: o Krug grande correndo atrás da tigela de papá
+  // ---------------------------------------------------------------------------
+  function playCutscene(level) {
+    return new Promise((resolve) => {
+      hideAll();
+      const el = $('#screen-cut');
+      const cv = $('#cut');
+      const g = cv.getContext('2d');
+      el.classList.remove('hidden');
+      S.mode = 'cutscene';
+      const W = window.innerWidth, H = window.innerHeight;
+      const r = Math.min(window.devicePixelRatio || 1, 2);
+      cv.width = Math.round(W * r);
+      cv.height = Math.round(H * r);
+      cv.style.width = W + 'px';
+      cv.style.height = H + 'px';
+      Snd.init();
+      Snd.bark(0);
+      const music = Snd.music();
+      const DUR = 6.0;
+      const t0 = performance.now();
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        music.stop();
+        el.classList.add('hidden');
+        el.removeEventListener('pointerdown', finish);
+        window.removeEventListener('keydown', onKey);
+        resolve();
+      };
+      const onKey = (e) => { if ([' ', 'Enter', 'Escape'].includes(e.key)) { e.preventDefault(); finish(); } };
+      setTimeout(() => {
+        if (done) return;
+        el.addEventListener('pointerdown', finish);
+        window.addEventListener('keydown', onKey);
+      }, 400);
+      let barked = false;
+      const step = (now) => {
+        if (done) return;
+        const t = (now - t0) / 1000;
+        drawCutscene(g, W, H, r, t, level);
+        if (!barked && t > 4.9) { barked = true; Snd.doubleBark(0); }
+        if (t > DUR) finish(); else requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
+  }
+
+  function drawCutscene(g, W, H, r, t, level) {
+    g.setTransform(r, 0, 0, r, 0, 0);
+    // Fundo: parede e chão de madeira
+    const floorY = H * 0.7;
+    const wall = g.createLinearGradient(0, 0, 0, floorY);
+    wall.addColorStop(0, '#0f2e2c');
+    wall.addColorStop(1, '#1f5f59');
+    g.fillStyle = wall;
+    g.fillRect(0, 0, W, floorY);
+    g.fillStyle = '#c99a6b';
+    g.fillRect(0, floorY, W, H - floorY);
+    g.fillStyle = 'rgba(90,55,25,.25)';
+    for (let y = floorY; y < H; y += 22) g.fillRect(0, y, W, 2);
+    const scroll = (t * 220) % 140;
+    for (let y = floorY, row = 0; y < H; y += 22, row++) {
+      for (let x = -scroll - (row % 2) * 70; x < W; x += 140) g.fillRect(x, y, 2, 22);
+    }
+    g.fillStyle = '#e8dcc6';
+    g.fillRect(0, floorY - 10, W, 10); // rodapé
+
+    const R = Math.min(H * 0.17, W * 0.2);
+    const legH = R * 0.35;
+    const bowlW = R * 1.3, bowlH = R * 0.65;
+    // Os dois cruzam a tela em cerca de 5 s; o Krug vai encurtando a distância
+    const gapAt = (tt) => R * Math.max(1.9, 2.7 - tt * 0.16);
+    const bx0 = -bowlW / 2;
+    const v = (W + R * 1.6 + bowlW / 2 + gapAt(5.3)) / 5.0;
+    const bxAt = (tt) => bx0 + v * (tt - 0.3);
+    const bx = bxAt(t);                           // tigela vai na frente
+    const kx = bx - gapAt(t);                     // Krug correndo atrás
+    const hop = Math.abs(Math.sin(t * 8)) * R * 0.45;
+    const by = floorY - bowlH / 2 - hop;
+
+    // Ração caindo da tigela; o Krug come ao passar
+    for (let k = 0; k < 40; k++) {
+      const tk = 0.3 + k * 0.12;
+      if (t < tk) break;
+      const sx = bxAt(tk) - bowlW * 0.3;
+      const dt = t - tk;
+      const vx = -R * (1.2 + (k % 3) * 0.4);
+      let x = sx + vx * dt;
+      let y = floorY - bowlH - Math.abs(Math.sin(tk * 8)) * R * 0.45 - R * 2.2 * dt + 0.5 * R * 9 * dt * dt;
+      if (y > floorY - 4) {
+        const land = (2.2 + Math.sqrt(2.2 * 2.2 + 2 * 9 * ((floorY - 4 - (floorY - bowlH - Math.abs(Math.sin(tk * 8)) * R * 0.45)) / R))) / 9;
+        x = sx + vx * land;
+        y = floorY - 4;
+      }
+      if (x < kx + R * 0.6) continue; // comida!
+      g.fillStyle = k % 2 ? '#8f4f22' : '#c98140';
+      g.beginPath(); g.arc(x, y, R * 0.07, 0, Math.PI * 2); g.fill();
+    }
+
+    // Tigela de papá pulando
+    g.save();
+    g.translate(bx, by);
+    g.rotate(Math.sin(t * 8) * 0.12);
+    g.fillStyle = 'rgba(0,0,0,.25)';
+    g.beginPath(); g.ellipse(0, bowlH / 2 + hop, bowlW * 0.5, R * 0.1, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#c98140';
+    g.beginPath(); g.ellipse(0, -bowlH * 0.45, bowlW * 0.42, bowlH * 0.35, 0, Math.PI, 0); g.fill();
+    for (let i = -3; i <= 3; i++) {
+      g.fillStyle = i % 2 ? '#8f4f22' : '#c98140';
+      g.beginPath(); g.arc(i * bowlW * 0.1, -bowlH * 0.55 - Math.cos(i) * bowlH * 0.12, R * 0.08, 0, Math.PI * 2); g.fill();
+    }
+    const bowlGrad = g.createLinearGradient(0, -bowlH / 2, 0, bowlH / 2);
+    bowlGrad.addColorStop(0, '#5f8dff');
+    bowlGrad.addColorStop(1, '#2747b8');
+    g.fillStyle = bowlGrad;
+    g.beginPath();
+    g.moveTo(-bowlW / 2, -bowlH / 2);
+    g.lineTo(bowlW / 2, -bowlH / 2);
+    g.lineTo(bowlW * 0.36, bowlH / 2);
+    g.lineTo(-bowlW * 0.36, bowlH / 2);
+    g.closePath();
+    g.fill();
+    g.fillStyle = '#dfe5ec';
+    g.fillRect(-bowlW / 2 - R * 0.05, -bowlH / 2 - R * 0.08, bowlW + R * 0.1, R * 0.14);
+    g.fillStyle = 'rgba(255,255,255,.9)';
+    g.font = `800 ${Math.round(R * 0.26)}px "Baloo 2", system-ui, sans-serif`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('PAPÁ', 0, bowlH * 0.08);
+    g.restore();
+
+    // Linhas de velocidade
+    g.strokeStyle = 'rgba(255,255,255,.35)';
+    g.lineWidth = 3;
+    g.lineCap = 'round';
+    for (let i = 0; i < 3; i++) {
+      const ly = floorY - legH - R * (0.5 + i * 0.5);
+      const off = ((t * 9 + i * 0.7) % 1) * R * 0.4;
+      g.beginPath(); g.moveTo(kx - R * 1.3 - off, ly); g.lineTo(kx - R * 2.2 - off, ly); g.stroke();
+    }
+
+    // Krug grande correndo: patinhas, rabinho, orelhas e a tampinha rolando
+    const ky = floorY - legH - R + Math.abs(Math.sin(t * 16)) * -R * 0.08;
+    const run = Math.sin(t * 22);
+    g.fillStyle = '#2a1d14';
+    [[-0.55, 1], [-0.2, -1], [0.2, 1], [0.55, -1]].forEach(([px, ph]) => {
+      const sw = run * ph * R * 0.22;
+      g.save();
+      g.translate(kx + px * R + sw, ky + R * 0.85);
+      g.beginPath(); g.ellipse(0, legH * 0.55, R * 0.11, legH * 0.6, sw / R, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#c98a4b';
+      g.beginPath(); g.ellipse(0, legH * 1.05, R * 0.13, R * 0.07, 0, 0, Math.PI * 2); g.fill();
+      g.restore();
+    });
+    // Rabinho abanando
+    g.save();
+    g.translate(kx - R * 0.9, ky - R * 0.2);
+    g.rotate(-0.6 + Math.sin(t * 30) * 0.5);
+    g.fillStyle = '#2a1d14';
+    g.beginPath(); g.ellipse(-R * 0.25, 0, R * 0.32, R * 0.08, 0, 0, Math.PI * 2); g.fill();
+    g.restore();
+    // Orelhas balançando
+    [[-0.45, -1], [0.45, 1]].forEach(([ox, sgn]) => {
+      g.save();
+      g.translate(kx + ox * R, ky - R * 0.8);
+      g.rotate(sgn * 0.5 + Math.sin(t * 18 + ox) * 0.35);
+      g.fillStyle = '#1c130d';
+      g.beginPath(); g.ellipse(0, -R * 0.18, R * 0.16, R * 0.3, 0, 0, Math.PI * 2); g.fill();
+      g.restore();
+    });
+    drawCap(g, kx, ky, R, Math.sin(t * 16) * 0.18, IMG.happy || IMG.normal); // balança sem virar a carinha
+    // Poeirinha nos pés
+    g.fillStyle = 'rgba(255,240,220,.6)';
+    for (let i = 0; i < 4; i++) {
+      const pt = ((t * 3 + i * 0.25) % 1);
+      g.globalAlpha = 1 - pt;
+      g.beginPath(); g.arc(kx - R * (0.8 + pt * 1.2), floorY - R * 0.05 - pt * R * 0.3, R * (0.06 + pt * 0.12), 0, Math.PI * 2); g.fill();
+    }
+    g.globalAlpha = 1;
+
+    // Letreiro
+    const ta = Math.min(1, t / 0.4) * Math.min(1, (6.0 - t) / 0.4);
+    g.globalAlpha = Math.max(0, ta);
+    const big = Math.round(Math.min(W * 0.1, 56));
+    const titleY = Math.min(H * 0.2, floorY - legH - R * 2.5 - big * 1.4);
+    g.font = `800 ${big}px "Baloo 2", system-ui, sans-serif`;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.lineJoin = 'round';
+    g.lineWidth = big * 0.18;
+    g.strokeStyle = '#0f2e2c';
+    g.strokeText('Corre, Krug!', W / 2, titleY);
+    g.fillStyle = '#ffe08a';
+    g.fillText('Corre, Krug!', W / 2, titleY);
+    const sm = Math.round(big * 0.45);
+    g.font = `700 ${sm}px "Baloo 2", system-ui, sans-serif`;
+    g.lineWidth = sm * 0.25;
+    g.strokeText(`${level} fases completas!`, W / 2, titleY + big * 0.85);
+    g.fillStyle = '#fff';
+    g.fillText(`${level} fases completas!`, W / 2, titleY + big * 0.85);
+    g.globalAlpha = 1;
   }
 
   function nextLevel() {
@@ -1327,6 +1729,7 @@
     const inView = (x, y) => (x + 1) * TS > cam.x && x * TS < cam.x + vw && (y + 1) * TS > cam.y && y * TS < cam.y + vh;
     const P = (v) => (v + 0.5) * TS;
 
+    for (const z of L.suns) drawSun(ctx, z, TS, t);
     drawBowl(ctx, P(L.goal.x), P(L.goal.y), TS, t);
 
     for (const [i, type] of L.items) {
@@ -1356,6 +1759,7 @@
     let face = IMG.normal;
     if (K.scaredT > 0) face = IMG.scared || face;
     else if (K.braveT > 0) face = IMG.brave || face;
+    else if (K.napT > 0) face = IMG.sleepy || face;
     else if (K.happyT > 0) face = IMG.happy || face;
     let kx = P(K.x), ky = P(K.y);
     if (K.scaredT > 0) { kx += Math.sin(t * 60) * TS * 0.06; ky += Math.cos(t * 47) * TS * 0.04; }
@@ -1526,7 +1930,11 @@
     setTimeout(() => Snd.bark(), 30);
   });
   $('#btn-again').addEventListener('click', () => { Snd.init(); newGame(); });
-  $('#btn-next').addEventListener('click', () => { Snd.init(); nextLevel(); });
+  $('#btn-next').addEventListener('click', () => {
+    Snd.init();
+    if (S.level % 5 === 0) playCutscene(S.level).then(nextLevel);
+    else nextLevel();
+  });
   $('#btn-pause').addEventListener('click', () => { if (S.mode === 'play') pause(); else resume(); });
   $('#btn-resume').addEventListener('click', resume);
   $('#btn-restart').addEventListener('click', () => { Snd.init(); newGame(); });
@@ -1560,6 +1968,7 @@
       if (type === 'pao') drawPao(g, s / 2, s / 2, s * 1.1, 0);
       if (type === 'bath') drawBath(g, s / 2, s / 2, s * 1.05, 0);
       if (type === 'coberta') drawCoberta(g, s / 2, s / 2, s * 1.1, 0);
+      if (type === 'sun') { g.fillStyle = '#c99a6b'; g.fillRect(0, 0, s, s); drawSunRect(g, 4, 4, s - 8, s - 8, s * 0.8, 0.5); }
     });
     const tc = $('#title-cap');
     const size = 120, r = 2;
@@ -1582,5 +1991,5 @@
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (L) render(); });
 
   // Acesso para testes automatizados
-  window.__krug = { S, K, get L() { return L; }, input, stop, newGame, nextLevel, buildLevel, CFG, drawCap, IMG, Snd };
+  window.__krug = { S, K, get L() { return L; }, input, stop, newGame, nextLevel, playCutscene, buildLevel, CFG, drawCap, IMG, Snd };
 })();

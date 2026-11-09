@@ -203,3 +203,12 @@ h2 { margin: 10px 0 4px; font-size: 1.8rem; line-height: 1.1; color: var(--teal-
 .star-list li.ok { opacity: 1; }
 .star-list svg { width: 18px; height: 18px; flex: none; fill: #e5dccb; }
 .star-list li.ok svg { fill: var(--gold); }
+
+/* ---------- Intervalo a cada 5 fases ---------- */
+.cutscene { position: fixed; inset: 0; z-index: 20; background: #0f2e2c; animation: fade .25s ease-out; cursor: pointer; }
+.cutscene.hidden { display: none; }
+.cutscene canvas { position: absolute; inset: 0; display: block; }
+.cutscene .skip {
+  position: absolute; left: 0; right: 0; bottom: calc(14px + env(safe-area-inset-bottom));
+  margin: 0; text-align: center; font-size: .9rem; opacity: .6;
+}
