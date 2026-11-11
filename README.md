@@ -12,7 +12,7 @@ Jogo web de labirinto visto de cima. O jogador conduz a tampinha de refrigerante
 
 | Item | Efeito |
 | --- | --- |
-| Tigela de papá | Conclui a fase (+100 × número da fase). A partir da fase 8, ela treme, foge com um apito de escorregador e reaparece em outro lugar a cada 9 a 13 s (nunca quando o Krug está chegando) |
+| Tigela de papá | Conclui a fase (+100 × número da fase). A partir da fase 8, ela treme, foge com um apito de escorregador e reaparece em outro lugar a cada 18 a 22 s (nunca quando o Krug está chegando) |
 | Popoca | +10 pontos |
 | Pão do queijo | +50 pontos e coragem por 7 segundos: o Krug espanta o má banho (+30) |
 | Cobertinha | Protege o Krug de um toque do má banho (aparece a partir da fase 2; se já estiver com uma, vale +20) |

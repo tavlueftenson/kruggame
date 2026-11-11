@@ -23,7 +23,7 @@
     catCooldown: 4,      // segundos sem se distrair de novo depois de latir
     catWalk: 1.1,        // casas por segundo do gato passeando
     catFlee: 5.5,        // casas por segundo do gato fugindo ofendido
-    bowlEvery: [9, 13],  // a tigela muda de lugar a cada 9 a 13 s (fase 8 em diante)
+    bowlEvery: [18, 22], // a tigela muda de lugar a cada 18 a 22 s (fase 8 em diante)
     bowlWarnTime: 1.2,   // segundos balançando antes de fugir
     lives: 3,
     braveTime: 7,        // segundos de coragem depois do pão do queijo
@@ -636,7 +636,7 @@
       n, m, W, H, g: m.g, start: { x: 1, y: 1 },
       goal: { x: goalIdx % W, y: (goalIdx / W) | 0 },
       items, baths, idx, theme, popTotal: pc, paoTotal: paoIdx.length, suns, sunAt, cats, blocked,
-      goalMoves: n >= 8, bowlTimer: 9 + Math.random() * 4, bowlWarn: 0, bowlPop: 0,
+      goalMoves: n >= 8, bowlTimer: CFG.bowlEvery[0] + Math.random() * (CFG.bowlEvery[1] - CFG.bowlEvery[0]), bowlWarn: 0, bowlPop: 0,
     };
   }
 
