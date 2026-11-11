@@ -3060,7 +3060,28 @@
     ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
     w: 'up', s: 'down', a: 'left', d: 'right', W: 'up', S: 'down', A: 'left', D: 'right',
   };
+  /** Atalho de teste: pula 5 fases (Shift + N, ou 5 toques rápidos no número da fase). */
+  function skipLevels(n) {
+    if (S.mode === 'cutscene') return;
+    const fresh = S.mode === 'start' || S.mode === 'over';
+    if (fresh) {
+      S.score = 0; S.lives = CFG.lives; S.stars = 0; S.lastHurt = null;
+      S.bestAtStart = S.best; K.shield = false;
+    }
+    const target = (fresh ? 1 : S.level) + n;
+    hideAll();
+    S.level = target - 1;
+    nextLevel();
+    banner('Fase ' + target, 'Atalho de teste: pulou ' + n + ' fases', 2);
+  }
+
   window.addEventListener('keydown', (e) => {
+    if (e.shiftKey && (e.key === 'N' || e.key === 'n')) {
+      e.preventDefault();
+      Snd.init();
+      skipLevels(5);
+      return;
+    }
     if (KEYMAP[e.key]) {
       e.preventDefault();
       input(KEYMAP[e.key]);
@@ -3122,6 +3143,14 @@
   }
 
   $('#btn-play').addEventListener('click', () => { Snd.init(); newGame(); });
+  // No celular: 5 toques rápidos no número da fase também pulam 5 fases
+  let levelTaps = [];
+  document.querySelector('.hud-left').addEventListener('pointerdown', () => {
+    const now = performance.now();
+    levelTaps = levelTaps.filter((t) => now - t < 2000);
+    levelTaps.push(now);
+    if (levelTaps.length >= 5) { levelTaps = []; Snd.init(); skipLevels(5); }
+  });
   $('#title-cap').addEventListener('pointerdown', (e) => {
     Snd.init();
     const c = e.currentTarget;
@@ -3204,5 +3233,5 @@
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (L) render(); });
 
   // Acesso para testes automatizados
-  window.__krug = { S, K, get L() { return L; }, input, stop, newGame, nextLevel, playCutscene, startDark, buildLevel, CFG, drawCap, IMG, Snd };
+  window.__krug = { S, K, get L() { return L; }, input, stop, newGame, nextLevel, playCutscene, startDark, skipLevels, buildLevel, CFG, drawCap, IMG, Snd };
 })();

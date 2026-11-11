@@ -25,6 +25,10 @@ Jogo web de labirinto visto de cima. O jogador conduz a tampinha de refrigerante
 | Apagão | Nas fases ímpares a partir da 15, a cada 20 a 30 s uma área aleatória do labirinto (cerca de metade) fica escura por 9 s, com um som de terror engraçado. Só uma luzinha em volta do Krug continua acesa, e os olhos do gato brilham no escuro |
 | Má banho | O Krug perde uma patinha e volta ao começo da fase |
 
+### Atalho de teste
+
+Para testar fases avançadas: **Shift + N** no teclado, ou 5 toques rápidos no número da fase no celular, pula 5 fases (funciona também na tela inicial, começando na fase 6).
+
 ### Estrelas
 
 Cada fase vale até 3 estrelas: chegar à tigela, comer todas as popocas e comer todos os pães do queijo. Não há recompensa por velocidade. A plaquinha no canto da tela mostra quantas popocas e quantos pães já foram comidos. Todas as popocas e todos os pães podem ser alcançados sem passar por banho parado nem por ovo de chocolate preto. Cada estrela além da primeira vale +50 pontos.
