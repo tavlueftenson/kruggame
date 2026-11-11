@@ -25,6 +25,7 @@
     catFlee: 5.5,        // casas por segundo do gato fugindo ofendido
     bowlEvery: [18, 22], // a tigela muda de lugar a cada 18 a 22 s (fase 8 em diante)
     bowlWarnTime: 1.2,   // segundos balançando antes de fugir
+    tunnelTime: 0.6,     // segundos atravessando o túnel
     lives: 3,
     braveTime: 7,        // segundos de coragem depois do pão do queijo
     scaredTime: 1.1,     // segundos tremendo depois do má banho
@@ -352,6 +353,11 @@
       b.start(t + 0.62); vib.start(t + 0.62);
       b.stop(t + 1.1); vib.stop(t + 1.1);
     },
+    tunnel() {
+      this.noise(0.4, 0.28, 900, 0, 0.8);
+      this.tone(330, 0.4, 'sine', 0.1, 140);
+      this.tone(520, 0.1, 'triangle', 0.1, 900, CFG.tunnelTime);
+    },
     hiss() { this.noise(0.55, 0.22, 4500, 0, 0.7); },
     meow(delay = 0) {
       if (!this.on || !this.ac) return;
@@ -480,6 +486,8 @@
     return segs;
   }
 
+  const TUNNEL_COLORS = ['#f2c14e', '#a77be0', '#5cc28a'];
+
   /** Monta uma fase: labirinto, tigela, petiscos e banhos. */
   function buildLevel(n) {
     const portrait = stage.clientHeight >= stage.clientWidth;
@@ -500,8 +508,37 @@
     let goalIdx = startIdx;
     for (const c of cells) if (d0[c] > d0[goalIdx]) goalIdx = c;
 
+    // Túneis a partir da fase 6: pares de becos sem saída distantes, ligados entre si
+    const tunnels = [];
+    const tunnelAt = new Map();
+    const nPairs = n >= 6 ? (n >= 12 ? 2 : 1) : 0;
+    if (nPairs) {
+      const deadEnds = shuffle(cells.filter((c) => c !== goalIdx && d0[c] >= 4 && openCount(m, c % W, (c / W) | 0) === 1));
+      const usedEnds = new Set();
+      const mouth = (c) => {
+        const x = c % W, y = (c / W) | 0;
+        return { x, y, dir: D4.find(([dx, dy]) => m.g[y + dy][x + dx] === 0) };
+      };
+      for (const a of deadEnds) {
+        if (tunnels.length >= nPairs) break;
+        if (usedEnds.has(a)) continue;
+        const da = bfs(m, a % W, (a / W) | 0);
+        let best = -1, bd = 0;
+        for (const b of deadEnds) {
+          if (b === a || usedEnds.has(b)) continue;
+          if (da[b] > bd) { bd = da[b]; best = b; }
+        }
+        if (best < 0 || bd < Math.max(12, d0[goalIdx] * 0.35)) continue;
+        const id = tunnels.length;
+        usedEnds.add(a); usedEnds.add(best);
+        tunnels.push({ a: mouth(a), b: mouth(best), color: TUNNEL_COLORS[id % TUNNEL_COLORS.length], shake: 0 });
+        tunnelAt.set(a, { id, end: 'a' });
+        tunnelAt.set(best, { id, end: 'b' });
+      }
+    }
+
     const items = new Map();
-    const pool = shuffle(cells.filter((c) => c !== goalIdx && d0[c] >= 2));
+    const pool = shuffle(cells.filter((c) => c !== goalIdx && d0[c] >= 2 && !tunnelAt.has(c)));
 
     // Pão do queijo: espalhado entre o começo e a tigela
     const nPao = Math.min(1 + Math.floor(n / 2), 5);
@@ -535,7 +572,7 @@
     const nStatic = Math.min(Math.round((1 + Math.floor(n * 0.8)) * (theme.key === 'banheiro' ? 1.4 : 1)), 22);
     for (const c of shuffle(cells.slice())) {
       if (baths.length >= nStatic) break;
-      if (c === goalIdx || items.has(c) || d0[c] < 4) continue;
+      if (c === goalIdx || items.has(c) || tunnelAt.has(c) || d0[c] < 4) continue;
       blocked.add(c);
       if (pathOk()) {
         baths.push({ x: c % W, y: (c / W) | 0, moving: false, gone: false, phase: Math.random() * 6 });
@@ -553,7 +590,7 @@
       for (const s of shuffle(segs)) {
         if (placed >= nMoving) break;
         const ids = s.tiles.map(([x, y]) => idx(x, y));
-        if (ids.some((p) => used.has(p) || p === goalIdx || p === startIdx || d0[p] < 5)) continue;
+        if (ids.some((p) => used.has(p) || tunnelAt.has(p) || p === goalIdx || p === startIdx || d0[p] < 5)) continue;
         // Para a checagem de caminho, só se pode cruzar o corredor na perpendicular
         const block = s.tiles.filter(([x, y]) => (s.horizontal
           ? m.g[y - 1][x] === 1 && m.g[y + 1][x] === 1
@@ -587,7 +624,7 @@
       const off = (Math.random() * (r.tiles.length - len + 1)) | 0;
       const tiles = r.tiles.slice(off, off + len);
       const ids = tiles.map(([x, y]) => idx(x, y));
-      if (ids.some((p) => sunAt.has(p) || bathSet.has(p) || p === goalIdx || d0[p] < 3)) continue;
+      if (ids.some((p) => sunAt.has(p) || bathSet.has(p) || tunnelAt.has(p) || p === goalIdx || d0[p] < 3)) continue;
       ids.forEach((p) => sunAt.set(p, suns.length));
       suns.push({ tiles, horizontal: r.horizontal, phase: Math.random() * 6 });
     }
@@ -598,7 +635,7 @@
     const nWhite = n >= 10 ? Math.min(2 + Math.floor((n - 10) / 4), 4) : 0;
     for (const c of shuffle(cells.slice())) {
       if (darkSet.size >= nDark) break;
-      if (c === goalIdx || items.has(c) || bathSet.has(c) || sunAt.has(c) || blocked.has(c) || d0[c] < 4) continue;
+      if (c === goalIdx || items.has(c) || bathSet.has(c) || sunAt.has(c) || blocked.has(c) || tunnelAt.has(c) || d0[c] < 4) continue;
       blocked.add(c);
       if (pathOk()) { darkSet.add(c); items.set(c, 'ovoPreto'); } else blocked.delete(c);
     }
@@ -628,14 +665,14 @@
     const cats = [];
     for (const c of shuffle(cells.slice())) {
       if (cats.length >= nCat) break;
-      if (d0[c] < 10 || c === goalIdx) continue;
+      if (d0[c] < 10 || c === goalIdx || tunnelAt.has(c)) continue;
       cats.push(makeCat(c % W, (c / W) | 0));
     }
 
     return {
       n, m, W, H, g: m.g, start: { x: 1, y: 1 },
       goal: { x: goalIdx % W, y: (goalIdx / W) | 0 },
-      items, baths, idx, theme, popTotal: pc, paoTotal: paoIdx.length, suns, sunAt, cats, blocked,
+      items, baths, idx, theme, popTotal: pc, paoTotal: paoIdx.length, suns, sunAt, cats, blocked, tunnels, tunnelAt,
       goalMoves: n >= 8, bowlTimer: CFG.bowlEvery[0] + Math.random() * (CFG.bowlEvery[1] - CFG.bowlEvery[0]), bowlWarn: 0, bowlPop: 0,
     };
   }
@@ -660,6 +697,7 @@
     cx: 1, cy: 1, x: 1, y: 1, dir: null, prog: 0, moving: false, queue: null, queueT: 0,
     napT: 0, napDir: null, sunZone: null, zzz: 0,
     barkT: 0, barkEvery: 0, barkCat: null, catCooldown: 0, barkShake: 0, hopT: 0, sick: false,
+    tunnelT: 0, tunnel: null, tunnelLock: null,
     angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0, bumpDir: [0, 0], shield: false, shieldPop: 0,
   };
   const particles = [];
@@ -1221,6 +1259,39 @@
     g.restore();
   }
 
+  /** Boca de túnel de pano para pets, listrado, virada para o corredor. */
+  function drawTunnel(g, end, T, s, t) {
+    g.save();
+    g.translate((end.x + 0.5) * s, (end.y + 0.5) * s);
+    g.rotate(Math.atan2(end.dir[1], end.dir[0]));
+    if (T.shake > 0) g.rotate(Math.sin(t * 50) * 0.14 * (T.shake / 0.6));
+    g.fillStyle = 'rgba(0,0,0,.25)';
+    roundRect(g, -s * 0.38, -s * 0.34, s * 0.78, s * 0.8, s * 0.3); g.fill();
+    // Corpo do túnel
+    const body = g.createLinearGradient(0, -s * 0.4, 0, s * 0.4);
+    body.addColorStop(0, T.color);
+    body.addColorStop(1, 'rgba(0,0,0,.25)');
+    g.fillStyle = T.color;
+    roundRect(g, -s * 0.44, -s * 0.4, s * 0.76, s * 0.8, s * 0.3); g.fill();
+    g.fillStyle = body;
+    roundRect(g, -s * 0.44, -s * 0.4, s * 0.76, s * 0.8, s * 0.3); g.fill();
+    // Anéis de arame do túnel
+    g.strokeStyle = 'rgba(255,255,255,.55)';
+    g.lineWidth = Math.max(1, s * 0.05);
+    for (const fx of [-0.28, -0.1, 0.08]) {
+      g.beginPath(); g.moveTo(fx * s, -s * 0.38); g.quadraticCurveTo(fx * s + s * 0.06, 0, fx * s, s * 0.38); g.stroke();
+    }
+    // Boca escura
+    g.fillStyle = T.color;
+    g.beginPath(); g.ellipse(s * 0.3, 0, s * 0.14, s * 0.4, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(0,0,0,.3)';
+    g.lineWidth = Math.max(1, s * 0.03);
+    g.stroke();
+    g.fillStyle = '#1b120c';
+    g.beginPath(); g.ellipse(s * 0.31, 0, s * 0.09, s * 0.31, 0, 0, Math.PI * 2); g.fill();
+    g.restore();
+  }
+
   /** Faixa de sol no chão, entrando pela janela na diagonal. */
   function drawSun(g, z, s, t) {
     const xs = z.tiles.map((p) => p[0]), ys = z.tiles.map((p) => p[1]);
@@ -1373,6 +1444,7 @@
   function stop() {
     Snd.init();
     if (S.mode !== 'play' || K.barkT > 0) return;
+    if (K.tunnelT > 0) { K.stopReq = true; return; } // para logo na saída do túnel
     K.queue = null;
     if (K.moving) K.stopReq = true;
     if (K.napT > 0) K.napDir = null;
@@ -1384,6 +1456,7 @@
     K.stopReq = false;
     const d = DIRS[name];
     if (!d || K.scaredT > 0) return;
+    if (K.tunnelT > 0) { K.queue = d; K.queueT = CFG.queueTime + K.tunnelT; return; } // vale na saída
     if (K.barkT > 0) return; // latindo para o gato, esqueceu de tudo
     if (K.napT > 0) { K.napDir = d; return; } // guarda para quando acordar
     if (!K.moving) {
@@ -1488,6 +1561,37 @@
       K.sunZone = z;
       nap();
     }
+    // Túnel: entra pela boca e sai pela outra da mesma cor
+    const tn = L.tunnelAt.get(i);
+    if (!tn) K.tunnelLock = null;
+    else if (K.tunnelLock !== i) enterTunnel(tn);
+  }
+
+  let tunnelHintShown = false;
+  function enterTunnel(tn) {
+    const T = L.tunnels[tn.id];
+    const from = T[tn.end], to = tn.end === 'a' ? T.b : T.a;
+    K.tunnel = { from, to, T };
+    K.tunnelT = CFG.tunnelTime;
+    K.moving = false;
+    K.queue = null;
+    K.stopReq = false;
+    T.shake = 0.6;
+    burst(from.x + 0.5, from.y + 0.5, '#e8d6b4', 8, 2, 0.07);
+    Snd.tunnel();
+    if (!tunnelHintShown) { tunnelHintShown = true; banner('Túnel!', 'Só o Krug cabe aqui'); }
+  }
+
+  function exitTunnel() {
+    const to = K.tunnel.to;
+    K.tunnel = null;
+    K.tunnelT = 0;
+    K.cx = to.x; K.cy = to.y; K.x = to.x; K.y = to.y; K.prog = 0;
+    K.tunnelLock = to.x + to.y * L.W;
+    burst(to.x + 0.5, to.y + 0.5, '#e8d6b4', 8, 2, 0.07);
+    if (K.stopReq) { K.stopReq = false; K.moving = false; return; }
+    K.dir = to.dir;
+    K.moving = true;
   }
 
   const eggHintShown = { white: false, dark: false };
@@ -1537,7 +1641,7 @@
     for (let y = 1; y < L.H; y += 2) {
       for (let x = 1; x < W; x += 2) {
         const i = x + y * W;
-        if (reach[i] < 0 || L.items.has(i) || L.sunAt.has(i)) continue;
+        if (reach[i] < 0 || L.items.has(i) || L.sunAt.has(i) || L.tunnelAt.has(i)) continue;
         if (x === L.goal.x && y === L.goal.y) continue;
         if (dK[i] >= 0 && dK[i] < 8) continue;
         if (L.baths.some((b) => !b.moving && b.x === x && b.y === y)) continue;
@@ -1576,6 +1680,16 @@
 
   function stepKrug(dt) {
     if (K.scaredT > 0) return;
+    if (K.tunnelT > 0) {
+      // Invisível dentro do túnel; a posição desliza para a câmera acompanhar
+      K.tunnelT -= dt;
+      const k = 1 - Math.max(0, K.tunnelT) / CFG.tunnelTime;
+      const e = k * k * (3 - 2 * k);
+      K.x = K.tunnel.from.x + (K.tunnel.to.x - K.tunnel.from.x) * e;
+      K.y = K.tunnel.from.y + (K.tunnel.to.y - K.tunnel.from.y) * e;
+      if (K.tunnelT <= 0) exitTunnel();
+      return;
+    }
     if (K.barkT > 0 && !K.moving) { K.x = K.cx; K.y = K.cy; return; }
     if (K.napT > 0) {
       K.napT -= dt;
@@ -1622,7 +1736,7 @@
         b.x = b.ax + (b.bx - b.ax) * f;
         b.y = b.ay + (b.by - b.ay) * f;
       }
-      if (K.scaredT > 0 || S.mode !== 'play') continue;
+      if (K.scaredT > 0 || K.tunnelT > 0 || S.mode !== 'play') continue;
       const dx = b.x - K.x, dy = b.y - K.y;
       if (dx * dx + dy * dy < CFG.hitRadius * CFG.hitRadius) {
         if (K.braveT > 0) {
@@ -1803,7 +1917,7 @@
       return;
     }
     if (K.catCooldown > 0) { K.catCooldown = Math.max(0, K.catCooldown - dt); return; }
-    if (K.scaredT > 0 || K.invulnT > 0) return;
+    if (K.scaredT > 0 || K.invulnT > 0 || K.tunnelT > 0) return;
     for (const c of L.cats) if (catSees(c)) { startBark(c); break; }
   }
 
@@ -1846,6 +1960,7 @@
       queue: null, angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0, saved: false, stopReq: false,
       napT: 0, napDir: null, sunZone: null, zzz: 0,
       barkT: 0, barkEvery: 0, barkCat: null, catCooldown: 0, barkShake: 0, hopT: 0, sick: false,
+      tunnelT: 0, tunnel: null, tunnelLock: null,
     });
     particles.length = 0;
     floaters.length = 0;
@@ -2351,6 +2466,7 @@
     if (K.barkShake > 0) K.barkShake = Math.max(0, K.barkShake - dt);
     if (K.happyT > 0) K.happyT = Math.max(0, K.happyT - dt);
     if (K.hopT > 0) K.hopT = Math.max(0, K.hopT - dt);
+    for (const T of L.tunnels) if (T.shake > 0) T.shake = Math.max(0, T.shake - dt);
     if (K.bumpT > 0) K.bumpT = Math.max(0, K.bumpT - dt);
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
@@ -2388,6 +2504,7 @@
     const P = (v) => (v + 0.5) * TS;
 
     for (const z of L.suns) drawSun(ctx, z, TS, t);
+    for (const T of L.tunnels) { drawTunnel(ctx, T.a, T, TS, t); drawTunnel(ctx, T.b, T, TS, t); }
     {
       // A tigela balança antes de fugir e aparece com um "pop" no lugar novo
       const warn = L.bowlWarn > 0 ? 1 - L.bowlWarn / CFG.bowlWarnTime : 0;
@@ -2456,6 +2573,7 @@
     const braveBlink = K.braveT > 0 && (K.braveT > 2 || Math.floor(t * 8) % 2 === 0);
     ctx.save();
     if (blink) ctx.globalAlpha = 0.35;
+    if (K.tunnelT > 0) ctx.globalAlpha = 0;
     const scale = S.mode === 'levelDone' ? 1 + Math.sin(t * 10) * 0.06 : 1;
     if (K.shield) drawWrap(ctx, kx, ky, TS * 0.47 * scale * (1 + K.shieldPop * 0.6), t);
     drawCap(ctx, kx, ky, TS * 0.47 * scale * hopScale, K.angle, face, { glow: braveBlink });
@@ -2656,6 +2774,7 @@
       if (type === 'pao') drawPao(g, s / 2, s / 2, s * 1.1, 0);
       if (type === 'bath') drawBath(g, s / 2, s / 2, s * 1.05, 0);
       if (type === 'coberta') drawCoberta(g, s / 2, s / 2, s * 1.1, 0);
+      if (type === 'tunnel') drawTunnel(g, { x: 0, y: 0, dir: [1, 0] }, { color: TUNNEL_COLORS[0], shake: 0 }, s, 0);
       if (type === 'ovoBranco') drawEgg(g, s / 2, s / 2, s * 1.1, 0, false);
       if (type === 'ovoPreto') drawEgg(g, s / 2, s / 2, s * 1.1, 0, true);
       if (type === 'cat') drawCat(g, s / 2 + 2, s / 2, s * 0.95, { face: -0.4, mode: 'sit', puff: 0, phase: 2 }, 0);

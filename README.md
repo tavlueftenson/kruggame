@@ -20,6 +20,7 @@ Jogo web de labirinto visto de cima. O jogador conduz a tampinha de refrigerante
 | Gato gordinho | A partir da fase 4 (dois a partir da fase 10). Se o Krug vê o gato no mesmo corredor reto, a até 4 casas e sem parede no meio, esquece de tudo: para e late por 2,5 s sem obedecer aos controles. Depois o gato foge ofendido para outro canto, e o Krug fica 4 s sem se distrair de novo. As casas vigiadas pelo gato ficam levemente avermelhadas |
 | Ovo de chocolate branco | A partir da fase 10: o Krug come, ganha 40 pontos e dá um saltinho feliz |
 | Ovo de chocolate preto | A partir da fase 10: chocolate preto faz mal a cachorro, o Krug perde uma patinha (sem voltar ao começo). Nunca bloqueia o caminho |
+| Túnel | A partir da fase 6 (dois pares a partir da fase 12). Cada par liga dois becos sem saída distantes, com as bocas da mesma cor. O Krug entra rolando numa boca, passa 0,6 s invisível e protegido, e sai rolando pela outra. Banho e gato não passam. Dá para escolher a direção ou pedir para parar durante a travessia |
 | Má banho | O Krug perde uma patinha e volta ao começo da fase |
 
 ### Estrelas
