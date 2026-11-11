@@ -21,6 +21,8 @@ Jogo web de labirinto visto de cima. O jogador conduz a tampinha de refrigerante
 | Ovo de chocolate branco | A partir da fase 10: o Krug come, ganha 40 pontos e dá um saltinho feliz |
 | Ovo de chocolate preto | A partir da fase 10: chocolate preto faz mal a cachorro, o Krug perde uma patinha (sem voltar ao começo). Nunca bloqueia o caminho |
 | Túnel | A partir da fase 6 (dois pares a partir da fase 12). Cada par liga dois becos sem saída distantes, com as bocas da mesma cor. O Krug entra rolando numa boca, passa 0,6 s invisível e protegido, e sai rolando pela outra. Banho e gato não passam. Dá para escolher a direção ou pedir para parar durante a travessia |
+| Passarinho | A partir da fase 12, aparece a cada 18 a 28 s, ronda o Krug piando por cerca de 2 s (com uma sombra embaixo dele) e mergulha. Se o Krug estiver andando, é levado pelo ar e solto em outro ponto seguro do labirinto. Se estiver parado (ou dentro de um túnel), despista o passarinho, que vai embora |
+| Apagão | Nas fases ímpares a partir da 15, a cada 20 a 30 s uma área aleatória do labirinto (cerca de metade) fica escura por 9 s, com um som de terror engraçado. Só uma luzinha em volta do Krug continua acesa, e os olhos do gato brilham no escuro |
 | Má banho | O Krug perde uma patinha e volta ao começo da fase |
 
 ### Estrelas
@@ -33,7 +35,7 @@ A cada 5 fases o Krug muda de cômodo: sala, quarto, cozinha e banheiro, e depoi
 
 ### Intervalo
 
-A cada 5 fases completas, ao tocar em "Próxima fase", aparece uma animação do Krug grande correndo atrás da tigela de papá, com uma musiquinha original. Da fase 10 em diante, o gato gordinho também aparece no caminho e foge irritado quando o Krug se aproxima. Um toque, Enter ou a barra de espaço pulam a animação.
+A cada 5 fases completas, ao tocar em "Próxima fase", aparece uma animação do Krug grande correndo atrás da tigela de papá, com uma musiquinha original. Da fase 10 em diante, o gato gordinho também aparece no caminho e foge irritado quando o Krug se aproxima. Da fase 15 em diante, o passarinho também aparece, tenta levantar o Krug grande, não consegue e vai embora deixando uma peninha. Um toque, Enter ou a barra de espaço pulam a animação.
 
 ### Patinhas
 

@@ -26,6 +26,10 @@
     bowlEvery: [18, 22], // a tigela muda de lugar a cada 18 a 22 s (fase 8 em diante)
     bowlWarnTime: 1.2,   // segundos balançando antes de fugir
     tunnelTime: 0.6,     // segundos atravessando o túnel
+    darkEvery: [20, 30], // apagão a cada 20 a 30 s (fases ímpares a partir da 15)
+    darkTime: 9,         // segundos que a área fica escura
+    birdEvery: [18, 28], // passarinho aparece a cada 18 a 28 s (fase 12 em diante)
+    birdWarn: 2.2,       // segundos rondando antes de mergulhar
     lives: 3,
     braveTime: 7,        // segundos de coragem depois do pão do queijo
     scaredTime: 1.1,     // segundos tremendo depois do má banho
@@ -358,6 +362,59 @@
       this.tone(330, 0.4, 'sine', 0.1, 140);
       this.tone(520, 0.1, 'triangle', 0.1, 900, CFG.tunnelTime);
     },
+    chirp() {
+      this.tone(2600, 0.07, 'sine', 0.07, 3600);
+      this.tone(2900, 0.09, 'sine', 0.07, 3900, 0.11);
+    },
+    flap() {
+      for (let i = 0; i < 6; i++) this.noise(0.06, 0.18, 1600, i * 0.09, 1.2);
+    },
+    birdGrab() {
+      this.flap();
+      this.tone(700, 0.5, 'triangle', 0.1, 1600);
+      this.play(this.randomBark(), { delay: 0.12, rate: 1.65, vol: 0.6 });
+    },
+    birdMiss() {
+      this.tone(2400, 0.1, 'sine', 0.07, 1800);
+      this.tone(1800, 0.2, 'sine', 0.07, 2900, 0.14);
+    },
+    /** Susto de mentirinha: acorde de órgão assombrado, "uuuuu" de fantasma e um ganido. */
+    spooky() {
+      if (!this.on || !this.ac) return;
+      const ac = this.ac, t0 = ac.currentTime;
+      [146.8, 174.6, 207.7, 246.9].forEach((f) => {
+        const o = ac.createOscillator();
+        const lp = ac.createBiquadFilter();
+        const g = ac.createGain();
+        o.type = 'sawtooth';
+        o.frequency.value = f;
+        lp.type = 'lowpass'; lp.frequency.value = 900;
+        g.gain.setValueAtTime(0.0001, t0);
+        g.gain.exponentialRampToValueAtTime(0.05, t0 + 0.05);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.3);
+        o.connect(lp).connect(g).connect(ac.destination);
+        o.start(t0); o.stop(t0 + 1.35);
+      });
+      const o = ac.createOscillator();
+      const g = ac.createGain();
+      const lfo = ac.createOscillator();
+      const lg = ac.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(820, t0 + 0.35);
+      o.frequency.exponentialRampToValueAtTime(360, t0 + 1.9);
+      lfo.frequency.value = 6;
+      lg.gain.value = 28;
+      lfo.connect(lg).connect(o.frequency);
+      g.gain.setValueAtTime(0.0001, t0 + 0.35);
+      g.gain.exponentialRampToValueAtTime(0.14, t0 + 0.5);
+      g.gain.setValueAtTime(0.14, t0 + 1.6);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.95);
+      o.connect(g).connect(ac.destination);
+      o.start(t0 + 0.35); lfo.start(t0 + 0.35);
+      o.stop(t0 + 2); lfo.stop(t0 + 2);
+      this.play(this.randomBark(), { delay: 2.0, rate: 1.7, vol: 0.5 });
+    },
+    lightsOn() { this.tone(1500, 0.04, 'square', 0.04); this.tone(1100, 0.05, 'square', 0.04, null, 0.06); },
     hiss() { this.noise(0.55, 0.22, 4500, 0, 0.7); },
     meow(delay = 0) {
       if (!this.on || !this.ac) return;
@@ -674,6 +731,8 @@
       goal: { x: goalIdx % W, y: (goalIdx / W) | 0 },
       items, baths, idx, theme, popTotal: pc, paoTotal: paoIdx.length, suns, sunAt, cats, blocked, tunnels, tunnelAt,
       goalMoves: n >= 8, bowlTimer: CFG.bowlEvery[0] + Math.random() * (CFG.bowlEvery[1] - CFG.bowlEvery[0]), bowlWarn: 0, bowlPop: 0,
+      darkState: { on: false, timer: n >= 15 && n % 2 === 1 ? 6 + Math.random() * 4 : Infinity },
+      bird: { state: null, timer: n >= 12 ? 12 + Math.random() * 6 : Infinity },
     };
   }
 
@@ -697,7 +756,7 @@
     cx: 1, cy: 1, x: 1, y: 1, dir: null, prog: 0, moving: false, queue: null, queueT: 0,
     napT: 0, napDir: null, sunZone: null, zzz: 0,
     barkT: 0, barkEvery: 0, barkCat: null, catCooldown: 0, barkShake: 0, hopT: 0, sick: false,
-    tunnelT: 0, tunnel: null, tunnelLock: null,
+    tunnelT: 0, tunnel: null, tunnelLock: null, carried: false,
     angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0, bumpDir: [0, 0], shield: false, shieldPop: 0,
   };
   const particles = [];
@@ -1259,6 +1318,95 @@
     g.restore();
   }
 
+  /** Escurece a área do apagão, deixando um círculo de luz em volta do Krug. */
+  let darkCanvas = null;
+  function drawDark(a, kpx, kpy) {
+    if (!darkCanvas) darkCanvas = document.createElement('canvas');
+    if (darkCanvas.width !== canvas.width || darkCanvas.height !== canvas.height) {
+      darkCanvas.width = canvas.width;
+      darkCanvas.height = canvas.height;
+    }
+    const g = darkCanvas.getContext('2d');
+    const D = L.darkState;
+    const ox = Math.round(cam.x), oy = Math.round(cam.y);
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, vw, vh);
+    g.fillStyle = `rgba(8,6,20,${a})`;
+    g.fillRect(D.x0 * TS - ox, D.y0 * TS - oy, D.w * TS, D.h * TS);
+    g.globalCompositeOperation = 'destination-out';
+    const r = TS * 1.9;
+    const grd = g.createRadialGradient(kpx - ox, kpy - oy, TS * 0.6, kpx - ox, kpy - oy, r);
+    grd.addColorStop(0, 'rgba(0,0,0,1)');
+    grd.addColorStop(0.55, 'rgba(0,0,0,.85)');
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grd;
+    g.beginPath(); g.arc(kpx - ox, kpy - oy, r, 0, Math.PI * 2); g.fill();
+    g.globalCompositeOperation = 'source-over';
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(darkCanvas, 0, 0);
+    ctx.restore();
+  }
+
+  /** Passarinho visto de cima: costas marrons, cabeça preta com listra branca. */
+  function drawBirdTop(g, x, y, s, t, ang) {
+    const R = s * 0.38;
+    const flap = Math.sin(t * 26);
+    g.save();
+    g.translate(x, y);
+    g.rotate(ang);
+    // Asas batendo
+    g.fillStyle = '#5b3b22';
+    for (const sg of [1, -1]) {
+      g.beginPath();
+      g.ellipse(-R * 0.1, sg * R * (0.6 + flap * 0.25), R * 0.55, R * (0.35 + Math.abs(flap) * 0.3), sg * 0.4, 0, Math.PI * 2);
+      g.fill();
+    }
+    // Rabo
+    g.beginPath(); g.moveTo(-R * 0.7, 0); g.lineTo(-R * 1.3, -R * 0.3); g.lineTo(-R * 1.3, R * 0.3); g.closePath(); g.fill();
+    // Corpo com a barriga amarela aparecendo dos lados
+    g.fillStyle = '#f5c518';
+    g.beginPath(); g.ellipse(0, 0, R * 0.8, R * 0.55, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#7a5230';
+    g.beginPath(); g.ellipse(-R * 0.05, 0, R * 0.75, R * 0.4, 0, 0, Math.PI * 2); g.fill();
+    // Cabeça
+    g.fillStyle = '#1d1d1d';
+    g.beginPath(); g.arc(R * 0.7, 0, R * 0.38, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#ffffff';
+    g.lineWidth = Math.max(1, R * 0.1);
+    for (const sg of [1, -1]) { g.beginPath(); g.moveTo(R * 0.45, sg * R * 0.2); g.lineTo(R * 0.95, sg * R * 0.18); g.stroke(); }
+    g.fillStyle = '#e8892a';
+    g.beginPath(); g.moveTo(R * 1.05, -R * 0.1); g.lineTo(R * 1.35, 0); g.lineTo(R * 1.05, R * 0.1); g.closePath(); g.fill();
+    g.restore();
+  }
+
+  /** Passarinho visto de lado, para o intervalo. */
+  function drawBirdSide(g, x, y, s, t) {
+    const f = Math.sin(t * 28);
+    g.save();
+    g.translate(x, y);
+    g.fillStyle = '#5b3b22';
+    g.beginPath(); g.moveTo(-s * 0.8, -s * 0.05); g.lineTo(-s * 1.45, -s * 0.3); g.lineTo(-s * 1.35, s * 0.2); g.closePath(); g.fill();
+    g.fillStyle = '#f5c518';
+    g.beginPath(); g.ellipse(0, s * 0.1, s * 0.95, s * 0.62, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#7a5230';
+    g.beginPath(); g.ellipse(-s * 0.15, -s * 0.18, s * 0.85, s * 0.42, -0.1, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#1d1d1d';
+    g.beginPath(); g.arc(s * 0.72, -s * 0.38, s * 0.42, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#ffffff';
+    g.lineWidth = s * 0.1;
+    g.beginPath(); g.arc(s * 0.72, -s * 0.38, s * 0.28, -2.7, -0.5); g.stroke();
+    g.fillStyle = '#fff';
+    g.beginPath(); g.arc(s * 0.86, -s * 0.36, s * 0.1, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#111';
+    g.beginPath(); g.arc(s * 0.89, -s * 0.36, s * 0.05, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#e8892a';
+    g.beginPath(); g.moveTo(s * 1.08, -s * 0.44); g.lineTo(s * 1.45, -s * 0.34); g.lineTo(s * 1.08, -s * 0.25); g.closePath(); g.fill();
+    g.fillStyle = '#4a2f1b';
+    g.beginPath(); g.ellipse(-s * 0.1, -s * 0.3 - f * s * 0.45, s * 0.6, s * (0.18 + Math.abs(f) * 0.28), -0.35 - f * 0.4, 0, Math.PI * 2); g.fill();
+    g.restore();
+  }
+
   /** Boca de túnel de pano para pets, listrado, virada para o corredor. */
   function drawTunnel(g, end, T, s, t) {
     g.save();
@@ -1444,6 +1592,7 @@
   function stop() {
     Snd.init();
     if (S.mode !== 'play' || K.barkT > 0) return;
+    if (K.carried) return;
     if (K.tunnelT > 0) { K.stopReq = true; return; } // para logo na saída do túnel
     K.queue = null;
     if (K.moving) K.stopReq = true;
@@ -1456,6 +1605,7 @@
     K.stopReq = false;
     const d = DIRS[name];
     if (!d || K.scaredT > 0) return;
+    if (K.carried) return; // pendurado no passarinho
     if (K.tunnelT > 0) { K.queue = d; K.queueT = CFG.queueTime + K.tunnelT; return; } // vale na saída
     if (K.barkT > 0) return; // latindo para o gato, esqueceu de tudo
     if (K.napT > 0) { K.napDir = d; return; } // guarda para quando acordar
@@ -1632,6 +1782,160 @@
     Snd.bowlWarn();
   }
 
+  // ---------------------------------------------------------------------------
+  // Apagão: nas fases ímpares a partir da 15, uma área aleatória fica escura
+  // ---------------------------------------------------------------------------
+  let darkHintShown = false;
+  function stepDark(dt) {
+    const D = L.darkState;
+    if (!D.on) {
+      D.timer -= dt;
+      if (D.timer <= 0) startDark();
+      return;
+    }
+    D.t += dt;
+    if (D.t >= D.dur) {
+      D.on = false;
+      D.timer = CFG.darkEvery[0] + Math.random() * (CFG.darkEvery[1] - CFG.darkEvery[0]);
+      Snd.lightsOn();
+    }
+  }
+
+  function startDark() {
+    const D = L.darkState;
+    const w = Math.round(L.W * (0.45 + Math.random() * 0.2));
+    const h = Math.round(L.H * (0.45 + Math.random() * 0.2));
+    Object.assign(D, {
+      on: true, t: 0, dur: CFG.darkTime,
+      x0: Math.floor(Math.random() * (L.W - w + 1)), y0: Math.floor(Math.random() * (L.H - h + 1)), w, h,
+    });
+    Snd.spooky();
+    if (!darkHintShown) { darkHintShown = true; banner('Apagou a luz!', 'Só dá para ver pertinho do Krug'); }
+  }
+
+  /** Quanto escuro está agora (0 a 1), com a luz piscando ao apagar e voltando aos poucos. */
+  function darkAlpha() {
+    const D = L.darkState;
+    if (!D.on) return 0;
+    if (D.t < 0.7) return Math.floor(D.t * 14) % 2 ? 0.95 : 0.25;
+    if (D.t > D.dur - 0.8) return 0.95 * Math.max(0, (D.dur - D.t) / 0.8);
+    return 0.95;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Passarinho (fase 12 em diante): leva o Krug se ele estiver andando
+  // ---------------------------------------------------------------------------
+  let birdHintShown = false;
+  function stepBird(dt) {
+    const B = L.bird;
+    if (!B.state) {
+      B.timer -= dt;
+      if (B.timer > 0) return;
+      if (K.scaredT > 0 || K.tunnelT > 0 || K.carried) { B.timer = 1; return; }
+      // Entra por um canto de cima da tela
+      const left = Math.random() < 0.5;
+      Object.assign(B, {
+        state: 'warn', t: 0, chirp: 0,
+        x: (cam.x + (left ? -TS : vw + TS)) / TS - 0.5, y: (cam.y - TS) / TS - 0.5,
+      });
+      if (!birdHintShown) { birdHintShown = true; banner('Passarinho!', 'Fique parado para despistar'); }
+      return;
+    }
+    B.t += dt;
+    if (B.state === 'warn') {
+      // Ronda em círculos logo acima do Krug
+      const k = Math.min(1, dt * 3);
+      const hx = K.x + Math.cos(B.t * 4) * 0.7, hy = K.y - 1 + Math.sin(B.t * 4) * 0.35;
+      B.x += (hx - B.x) * k;
+      B.y += (hy - B.y) * k;
+      B.chirp -= dt;
+      if (B.chirp <= 0) { B.chirp = 0.55; Snd.chirp(); }
+      if (B.t >= CFG.birdWarn) { B.state = 'dive'; B.t = 0; B.fx = B.x; B.fy = B.y; }
+    } else if (B.state === 'dive') {
+      const k = Math.min(1, B.t / 0.3);
+      B.x = B.fx + (K.x - B.fx) * k;
+      B.y = B.fy + (K.y - 0.2 - B.fy) * k;
+      if (k >= 1) {
+        if (S.mode === 'play' && K.moving && K.tunnelT <= 0 && K.scaredT <= 0) birdGrab(B);
+        else birdMiss(B);
+      }
+    } else if (B.state === 'carry') {
+      const k = Math.min(1, B.t / B.dur);
+      const e = k * k * (3 - 2 * k);
+      B.x = B.sx + (B.dx - B.sx) * e;
+      B.y = B.sy + (B.dy - B.sy) * e - Math.sin(k * Math.PI) * 1.5 - 0.3;
+      K.x = B.x;
+      K.y = B.y + 0.3;
+      if (k >= 1) birdDrop(B);
+    } else if (B.state === 'leave') {
+      B.x += B.vx * dt;
+      B.y += B.vy * dt;
+      if (B.t > 1.6) {
+        B.state = null;
+        B.timer = CFG.birdEvery[0] + Math.random() * (CFG.birdEvery[1] - CFG.birdEvery[0]);
+      }
+    }
+  }
+
+  /** Casa segura e alcançável, nem perto nem longe demais, para soltar o Krug. */
+  function birdDropCell() {
+    const W = L.W;
+    const kx = Math.round(K.x), ky = Math.round(K.y);
+    const reach = bfs(L.m, 1, 1, L.blocked);
+    const dK = bfs(L.m, kx, ky, L.blocked);
+    const pick = (minD, maxD) => {
+      const ok = [];
+      for (let y = 1; y < L.H; y += 2) {
+        for (let x = 1; x < W; x += 2) {
+          const i = x + y * W;
+          if (reach[i] < 0 || L.items.has(i) || L.sunAt.has(i) || L.tunnelAt.has(i)) continue;
+          if (x === L.goal.x && y === L.goal.y) continue;
+          if (dK[i] >= 0 && (dK[i] < minD || dK[i] > maxD)) continue;
+          if (L.baths.some((b) => !b.gone && Math.abs(b.x - x) + Math.abs(b.y - y) < 3)) continue;
+          ok.push(i);
+        }
+      }
+      return ok;
+    };
+    let ok = pick(6, 30);
+    if (!ok.length) ok = pick(2, 999);
+    if (!ok.length) return { x: L.start.x, y: L.start.y };
+    const i = ok[(Math.random() * ok.length) | 0];
+    return { x: i % W, y: (i / W) | 0 };
+  }
+
+  function birdGrab(B) {
+    const d = birdDropCell();
+    K.carried = true;
+    K.moving = false;
+    K.queue = null;
+    K.stopReq = false;
+    K.napT = 0;
+    Object.assign(B, { state: 'carry', t: 0, sx: K.x, sy: K.y, dx: d.x, dy: d.y });
+    B.dur = 1.1 + Math.min(1.2, Math.hypot(d.x - K.x, d.y - K.y) * 0.04);
+    burst(K.x + 0.5, K.y + 0.5, '#7a5230', 8, 2.5, 0.07);
+    floatText(K.x + 0.5, K.y, 'opa!', '#ffe08a');
+    Snd.birdGrab();
+  }
+
+  function birdDrop(B) {
+    K.carried = false;
+    K.cx = B.dx; K.cy = B.dy; K.x = B.dx; K.y = B.dy;
+    K.prog = 0; K.dir = null; K.moving = false;
+    K.invulnT = 1.5;
+    K.tunnelLock = null;
+    K.sunZone = L.sunAt.get(L.idx(K.cx, K.cy)) ?? null;
+    burst(K.x + 0.5, K.y + 0.5, '#c9a27a', 10, 2.5, 0.07, 3);
+    Object.assign(B, { state: 'leave', t: 0, vx: (Math.random() < 0.5 ? -1 : 1) * 9, vy: -7 });
+    Snd.chirp();
+  }
+
+  function birdMiss(B) {
+    floatText(K.x + 0.5, K.y - 0.2, 'despistou!', '#bde6ff');
+    Object.assign(B, { state: 'leave', t: 0, vx: (Math.random() < 0.5 ? -1 : 1) * 8, vy: -8 });
+    Snd.birdMiss();
+  }
+
   function moveBowl() {
     const W = L.W;
     const kx = Math.round(K.x), ky = Math.round(K.y);
@@ -1679,6 +1983,7 @@
   }
 
   function stepKrug(dt) {
+    if (K.carried) return;
     if (K.scaredT > 0) return;
     if (K.tunnelT > 0) {
       // Invisível dentro do túnel; a posição desliza para a câmera acompanhar
@@ -1736,7 +2041,7 @@
         b.x = b.ax + (b.bx - b.ax) * f;
         b.y = b.ay + (b.by - b.ay) * f;
       }
-      if (K.scaredT > 0 || K.tunnelT > 0 || S.mode !== 'play') continue;
+      if (K.scaredT > 0 || K.tunnelT > 0 || K.carried || S.mode !== 'play') continue;
       const dx = b.x - K.x, dy = b.y - K.y;
       if (dx * dx + dy * dy < CFG.hitRadius * CFG.hitRadius) {
         if (K.braveT > 0) {
@@ -1917,7 +2222,7 @@
       return;
     }
     if (K.catCooldown > 0) { K.catCooldown = Math.max(0, K.catCooldown - dt); return; }
-    if (K.scaredT > 0 || K.invulnT > 0 || K.tunnelT > 0) return;
+    if (K.scaredT > 0 || K.invulnT > 0 || K.tunnelT > 0 || K.carried) return;
     for (const c of L.cats) if (catSees(c)) { startBark(c); break; }
   }
 
@@ -1960,7 +2265,7 @@
       queue: null, angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0, saved: false, stopReq: false,
       napT: 0, napDir: null, sunZone: null, zzz: 0,
       barkT: 0, barkEvery: 0, barkCat: null, catCooldown: 0, barkShake: 0, hopT: 0, sick: false,
-      tunnelT: 0, tunnel: null, tunnelLock: null,
+      tunnelT: 0, tunnel: null, tunnelLock: null, carried: false,
     });
     particles.length = 0;
     floaters.length = 0;
@@ -2063,6 +2368,7 @@
       }, 400);
       let barked = false;
       let catDone = level < 10;
+      let birdStep = 0;
       const step = (now) => {
         if (done) return;
         const t = (now - t0) / 1000;
@@ -2074,6 +2380,11 @@
         }
         drawCutscene(g, W, H, r, t, level);
         if (!barked && t > 4.9) { barked = true; Snd.doubleBark(0); }
+        if (level >= 15) {
+          if (birdStep === 0 && t > BIRD_T[0]) { birdStep = 1; Snd.chirp(); Snd.chirp && setTimeout(() => Snd.chirp(), 350); }
+          if (birdStep === 1 && t > BIRD_T[1]) { birdStep = 2; Snd.flap(); Snd.bark(0.3, { rate: 1.3 }); }
+          if (birdStep === 2 && t > BIRD_T[2]) { birdStep = 3; Snd.birdMiss(); }
+        }
         if (t > DUR) finish(); else requestAnimationFrame(step);
       };
       requestAnimationFrame(step);
@@ -2210,6 +2521,32 @@
     }
   }
 
+  /**
+   * Passarinho do intervalo (fase 15 em diante): vem voando, tenta levantar
+   * o Krug grande, não consegue e vai embora deixando uma peninha.
+   */
+  const BIRD_T = [1.0, 3.0, 3.8];
+  function cutBird(W, H, t) {
+    if (t < BIRD_T[0]) return null;
+    const { R, kx } = cutLayout(W, H, t);
+    const floorY = H * 0.7, legH = R * 0.35;
+    const ky = floorY - legH - R;
+    const hold = ky - R * 1.2;
+    if (t < BIRD_T[1]) {
+      const k = (t - BIRD_T[0]) / (BIRD_T[1] - BIRD_T[0]);
+      const e = k * k * (3 - 2 * k);
+      return { x: -R + (kx + R * 0.1 + R) * e, y: H * 0.1 + (hold - H * 0.1) * e - Math.sin(k * Math.PI) * H * 0.06, lift: 0, R };
+    }
+    if (t < BIRD_T[2]) {
+      const k = (t - BIRD_T[1]) / (BIRD_T[2] - BIRD_T[1]);
+      const lift = Math.sin(k * Math.PI) * R * 0.3;
+      return { x: kx + R * 0.1, y: hold - lift, lift, R, struggling: true };
+    }
+    const k = t - BIRD_T[2];
+    const lx = cutLayout(W, H, BIRD_T[2]).kx + R * 0.1;
+    return { x: lx + k * W * 0.55, y: hold - k * H * 0.4, lift: 0, R, leaving: k };
+  }
+
   function drawCutscene(g, W, H, r, t, level) {
     g.setTransform(r, 0, 0, r, 0, 0);
     // Fundo: parede e chão de madeira
@@ -2296,7 +2633,8 @@
     }
 
     // Krug grande correndo: patinhas, rabinho, orelhas e a tampinha rolando
-    const ky = floorY - legH - R + Math.abs(Math.sin(t * 16)) * -R * 0.08;
+    const bird = level >= 15 ? cutBird(W, H, t) : null;
+    const ky = floorY - legH - R + Math.abs(Math.sin(t * 16)) * -R * 0.08 - (bird ? bird.lift : 0);
     const run = Math.sin(t * 22);
     g.fillStyle = '#2a1d14';
     [[-0.55, 1], [-0.2, -1], [0.2, 1], [0.55, -1]].forEach(([px, ph]) => {
@@ -2333,6 +2671,33 @@
       g.beginPath(); g.arc(kx - R * (0.8 + pt * 1.2), floorY - R * 0.05 - pt * R * 0.3, R * (0.06 + pt * 0.12), 0, Math.PI * 2); g.fill();
     }
     g.globalAlpha = 1;
+
+    // Passarinho tentando levantar o Krug (fase 15 em diante)
+    if (bird && bird.x < W + R * 2 && bird.y > -R * 2) {
+      drawBirdSide(g, bird.x, bird.y, bird.R * 0.42, t);
+      if (bird.struggling) {
+        g.save();
+        g.font = `800 ${Math.round(R * 0.4)}px "Baloo 2", system-ui, sans-serif`;
+        g.textAlign = 'center';
+        g.fillStyle = '#ffe08a';
+        g.strokeStyle = '#0f2e2c';
+        g.lineWidth = R * 0.08;
+        g.strokeText('!!', bird.x, bird.y - R * 0.45);
+        g.fillText('!!', bird.x, bird.y - R * 0.45);
+        g.restore();
+      }
+      if (bird.leaving !== undefined && bird.leaving < 2) {
+        // Peninha caindo devagar
+        const fx = cutLayout(W, H, BIRD_T[2]).kx + Math.sin(bird.leaving * 4) * R * 0.3;
+        const fy = floorY - legH - R * 2.3 + bird.leaving * R * 0.8;
+        g.save();
+        g.translate(fx, fy);
+        g.rotate(Math.sin(bird.leaving * 5) * 0.6);
+        g.fillStyle = '#7a5230';
+        g.beginPath(); g.ellipse(0, 0, R * 0.06, R * 0.18, 0, 0, Math.PI * 2); g.fill();
+        g.restore();
+      }
+    }
 
     // Gato gordinho mais à frente no chão (fase 10 em diante): a tigela e o Krug passam atrás dele
     if (level >= 10) {
@@ -2462,6 +2827,8 @@
       stepBaths(dt);
       stepCats(dt);
       if (L.goalMoves) stepBowl(dt);
+      stepDark(dt);
+      stepBird(dt);
     }
     if (K.barkShake > 0) K.barkShake = Math.max(0, K.barkShake - dt);
     if (K.happyT > 0) K.happyT = Math.max(0, K.happyT - dt);
@@ -2551,7 +2918,7 @@
 
     // Krug
     let face = IMG.normal;
-    if (K.scaredT > 0) face = IMG.scared || face;
+    if (K.scaredT > 0 || K.carried) face = IMG.scared || face;
     else if (K.barkT > 0) face = IMG.brave || face;
     else if (K.braveT > 0) face = IMG.brave || face;
     else if (K.napT > 0) face = IMG.sleepy || face;
@@ -2574,11 +2941,39 @@
     ctx.save();
     if (blink) ctx.globalAlpha = 0.35;
     if (K.tunnelT > 0) ctx.globalAlpha = 0;
+    if (K.carried) { ctx.translate(kx, ky); ctx.rotate(Math.sin(t * 9) * 0.25); ctx.scale(0.85, 0.85); ctx.translate(-kx, -ky); }
     const scale = S.mode === 'levelDone' ? 1 + Math.sin(t * 10) * 0.06 : 1;
     if (K.shield) drawWrap(ctx, kx, ky, TS * 0.47 * scale * (1 + K.shieldPop * 0.6), t);
     drawCap(ctx, kx, ky, TS * 0.47 * scale * hopScale, K.angle, face, { glow: braveBlink });
     if (K.queue && K.moving) drawQueueArrow(ctx, kx, ky, TS * 0.47, K.queue, t);
     ctx.restore();
+
+    // Apagão por cima do labirinto, com uma luzinha em volta do Krug
+    const da = darkAlpha();
+    if (da > 0) {
+      drawDark(da, P(K.x), P(K.y));
+      // Olhos do gato brilhando no escuro
+      const D = L.darkState;
+      for (const c of L.cats) {
+        if (c.x < D.x0 || c.x >= D.x0 + D.w || c.y < D.y0 || c.y >= D.y0 + D.h) continue;
+        const ex = P(c.x) + Math.cos(c.face) * TS * 0.45, ey = P(c.y) + Math.sin(c.face) * TS * 0.45;
+        const px = -Math.sin(c.face) * TS * 0.08, py = Math.cos(c.face) * TS * 0.08;
+        ctx.fillStyle = `rgba(242,209,75,${da})`;
+        for (const sg of [1, -1]) { ctx.beginPath(); ctx.arc(ex + px * sg, ey + py * sg, TS * 0.05, 0, Math.PI * 2); ctx.fill(); }
+      }
+    }
+
+    // Passarinho (sombra no chão sobre o Krug enquanto ronda)
+    const B = L.bird;
+    if (B.state) {
+      if (B.state === 'warn' || B.state === 'dive') {
+        const pulse = 0.5 + Math.sin(t * 10) * 0.5;
+        ctx.fillStyle = `rgba(0,0,0,${0.15 + pulse * 0.15})`;
+        ctx.beginPath(); ctx.ellipse(P(K.x), P(K.y) + TS * 0.15, TS * 0.45, TS * 0.25, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      const ang = B.state === 'leave' ? Math.atan2(B.vy, B.vx) : B.state === 'carry' ? Math.atan2(B.dy - B.sy, B.dx - B.sx) : Math.atan2(K.y - B.y, K.x - B.x);
+      drawBirdTop(ctx, P(B.x), P(B.y), TS * 1.3, t, ang);
+    }
 
     // Partículas
     for (const p of particles) {
@@ -2774,6 +3169,14 @@
       if (type === 'pao') drawPao(g, s / 2, s / 2, s * 1.1, 0);
       if (type === 'bath') drawBath(g, s / 2, s / 2, s * 1.05, 0);
       if (type === 'coberta') drawCoberta(g, s / 2, s / 2, s * 1.1, 0);
+      if (type === 'bird') { g.save(); drawBirdTop(g, s / 2, s / 2, s * 1.2, 0.3, -Math.PI / 2); g.restore(); }
+      if (type === 'dark') {
+        g.fillStyle = '#c99a6b'; g.fillRect(0, 0, s, s);
+        g.fillStyle = 'rgba(8,6,20,.9)'; g.fillRect(0, 0, s, s);
+        const gr = g.createRadialGradient(s / 2, s / 2, 2, s / 2, s / 2, s * 0.4);
+        gr.addColorStop(0, 'rgba(255,230,160,.9)'); gr.addColorStop(1, 'rgba(255,230,160,0)');
+        g.fillStyle = gr; g.beginPath(); g.arc(s / 2, s / 2, s * 0.4, 0, Math.PI * 2); g.fill();
+      }
       if (type === 'tunnel') drawTunnel(g, { x: 0, y: 0, dir: [1, 0] }, { color: TUNNEL_COLORS[0], shake: 0 }, s, 0);
       if (type === 'ovoBranco') drawEgg(g, s / 2, s / 2, s * 1.1, 0, false);
       if (type === 'ovoPreto') drawEgg(g, s / 2, s / 2, s * 1.1, 0, true);
@@ -2801,5 +3204,5 @@
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (L) render(); });
 
   // Acesso para testes automatizados
-  window.__krug = { S, K, get L() { return L; }, input, stop, newGame, nextLevel, playCutscene, buildLevel, CFG, drawCap, IMG, Snd };
+  window.__krug = { S, K, get L() { return L; }, input, stop, newGame, nextLevel, playCutscene, startDark, buildLevel, CFG, drawCap, IMG, Snd };
 })();
