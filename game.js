@@ -1320,19 +1320,48 @@
 
   /** Escurece a área do apagão, deixando um círculo de luz em volta do Krug. */
   let darkCanvas = null;
-  function drawDark(a, kpx, kpy) {
+  let darkTiles = null;
+  /**
+   * Desenha a escuridão: um mapa de 1 pixel por casa, ampliado com suavização,
+   * o que deixa a borda esfumada e acompanhando o labirinto. Fica uma luzinha
+   * em volta do Krug.
+   */
+  function drawDark(kpx, kpy) {
+    if (!darkTiles || darkTiles.width !== L.W || darkTiles.height !== L.H) {
+      darkTiles = document.createElement('canvas');
+      darkTiles.width = L.W;
+      darkTiles.height = L.H;
+    }
+    const tg = darkTiles.getContext('2d');
+    const img = tg.createImageData(L.W, L.H);
+    let any = false;
+    for (let y = 0; y < L.H; y++) {
+      for (let x = 0; x < L.W; x++) {
+        const a = darkAt(x, y) * 0.95;
+        if (a > 0) any = true;
+        const o = (x + y * L.W) * 4;
+        img.data[o] = 8; img.data[o + 1] = 6; img.data[o + 2] = 20;
+        img.data[o + 3] = Math.round(a * 255);
+      }
+    }
+    if (!any) return;
+    tg.putImageData(img, 0, 0);
+
     if (!darkCanvas) darkCanvas = document.createElement('canvas');
     if (darkCanvas.width !== canvas.width || darkCanvas.height !== canvas.height) {
       darkCanvas.width = canvas.width;
       darkCanvas.height = canvas.height;
     }
     const g = darkCanvas.getContext('2d');
-    const D = L.darkState;
     const ox = Math.round(cam.x), oy = Math.round(cam.y);
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, vw, vh);
-    g.fillStyle = `rgba(8,6,20,${a})`;
-    g.fillRect(D.x0 * TS - ox, D.y0 * TS - oy, D.w * TS, D.h * TS);
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = 'high';
+    // Desfoque leve para a borda ficar ainda mais suave (navegadores sem suporte ignoram)
+    g.filter = `blur(${Math.max(2, Math.round(TS * 0.35))}px)`;
+    g.drawImage(darkTiles, -ox, -oy, L.W * TS, L.H * TS);
+    g.filter = 'none';
     g.globalCompositeOperation = 'destination-out';
     const r = TS * 1.9;
     const grd = g.createRadialGradient(kpx - ox, kpy - oy, TS * 0.6, kpx - ox, kpy - oy, r);
@@ -1786,6 +1815,10 @@
   // Apagão: nas fases ímpares a partir da 15, uma área aleatória fica escura
   // ---------------------------------------------------------------------------
   let darkHintShown = false;
+  const DARK_IN = 1.6;   // segundos para a escuridão se espalhar
+  const DARK_OUT = 1.4;  // segundos para a luz voltar
+  const DARK_FADE = 3;   // casas de transição suave na borda da escuridão
+
   function stepDark(dt) {
     const D = L.darkState;
     if (!D.on) {
@@ -1797,29 +1830,61 @@
     if (D.t >= D.dur) {
       D.on = false;
       D.timer = CFG.darkEvery[0] + Math.random() * (CFG.darkEvery[1] - CFG.darkEvery[0]);
-      Snd.lightsOn();
     }
+    if (!D.lit && D.t >= D.dur - DARK_OUT) { D.lit = true; Snd.lightsOn(); }
   }
 
+  /**
+   * A luz apaga a partir de uma casa aleatória e a escuridão escorre pelos
+   * corredores até cobrir cerca de 40% do labirinto, acompanhando as paredes.
+   */
   function startDark() {
     const D = L.darkState;
-    const w = Math.round(L.W * (0.45 + Math.random() * 0.2));
-    const h = Math.round(L.H * (0.45 + Math.random() * 0.2));
-    Object.assign(D, {
-      on: true, t: 0, dur: CFG.darkTime,
-      x0: Math.floor(Math.random() * (L.W - w + 1)), y0: Math.floor(Math.random() * (L.H - h + 1)), w, h,
-    });
+    const cells = [];
+    for (let y = 1; y < L.H; y += 2) for (let x = 1; x < L.W; x += 2) cells.push([x, y]);
+    const [ox, oy] = cells[(Math.random() * cells.length) | 0];
+    const dist = bfs(L.m, ox, oy);
+    const ds = [];
+    for (let i = 0; i < dist.length; i++) if (dist[i] >= 0) ds.push(dist[i]);
+    ds.sort((a, b) => a - b);
+    const R = Math.max(8, ds[Math.floor(ds.length * 0.4)] || 8);
+    Object.assign(D, { on: true, t: 0, dur: CFG.darkTime, dist, R, lit: false, tiles: null });
     Snd.spooky();
     if (!darkHintShown) { darkHintShown = true; banner('Apagou a luz!', 'Só dá para ver pertinho do Krug'); }
   }
 
-  /** Quanto escuro está agora (0 a 1), com a luz piscando ao apagar e voltando aos poucos. */
-  function darkAlpha() {
+  /** Até onde a escuridão chegou agora (em passos pelos corredores, a partir da origem). */
+  function darkFront() {
+    const D = L.darkState;
+    if (!D.on) return -1;
+    const ease = (k) => k * k * (3 - 2 * k);
+    const reach = D.R + DARK_FADE;
+    if (D.t < DARK_IN) return reach * ease(D.t / DARK_IN);
+    if (D.t > D.dur - DARK_OUT) return reach * (1 - ease(Math.min(1, (D.t - (D.dur - DARK_OUT)) / DARK_OUT)));
+    return reach;
+  }
+
+  /** Quanto está escura uma casa (0 a 1). Paredes acompanham os corredores vizinhos. */
+  function darkAt(x, y) {
     const D = L.darkState;
     if (!D.on) return 0;
-    if (D.t < 0.7) return Math.floor(D.t * 14) % 2 ? 0.95 : 0.25;
-    if (D.t > D.dur - 0.8) return 0.95 * Math.max(0, (D.dur - D.t) / 0.8);
-    return 0.95;
+    const f = Math.min(darkFront(), D.R + DARK_FADE);
+    const one = (i) => {
+      const d = D.dist[i];
+      if (d < 0) return 0;
+      return Math.max(0, Math.min(1, (f - d) / DARK_FADE, (D.R + DARK_FADE - d) / DARK_FADE));
+    };
+    const i = x + y * L.W;
+    if (L.g[y][x] === 0) return one(i);
+    let m = 0;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= L.W || ny >= L.H || L.g[ny][nx] !== 0) continue;
+        m = Math.max(m, one(nx + ny * L.W));
+      }
+    }
+    return m;
   }
 
   // ---------------------------------------------------------------------------
@@ -2949,13 +3014,12 @@
     ctx.restore();
 
     // Apagão por cima do labirinto, com uma luzinha em volta do Krug
-    const da = darkAlpha();
-    if (da > 0) {
-      drawDark(da, P(K.x), P(K.y));
+    if (L.darkState.on) {
+      drawDark(P(K.x), P(K.y));
       // Olhos do gato brilhando no escuro
-      const D = L.darkState;
       for (const c of L.cats) {
-        if (c.x < D.x0 || c.x >= D.x0 + D.w || c.y < D.y0 || c.y >= D.y0 + D.h) continue;
+        const da = darkAt(Math.round(c.x), Math.round(c.y));
+        if (da < 0.5) continue;
         const ex = P(c.x) + Math.cos(c.face) * TS * 0.45, ey = P(c.y) + Math.sin(c.face) * TS * 0.45;
         const px = -Math.sin(c.face) * TS * 0.08, py = Math.cos(c.face) * TS * 0.08;
         ctx.fillStyle = `rgba(242,209,75,${da})`;
