@@ -3363,8 +3363,21 @@
   if (isTouch) {
     CFG.minTile = 30;
     document.documentElement.classList.add('touch');
-    $('#controls-hint').textContent = 'Deslize o dedo na tela ou use o direcional. A tampinha rola reto até bater na parede; escolha outra direção e ela vira assim que puder. Para parar, use o botão do meio ou dê um toque rápido no labirinto.';
+    $('#controls-hint').innerHTML = 'Deslize o dedo na tela para mover o Krug: ele rola reto até bater na parede, e dá para virar sem tirar o dedo. <strong>Para parar, dê um toque rápido no labirinto.</strong> Se preferir botões, ligue o direcional no menu de pausa.';
   }
+
+  // Direcional escondido por padrão; dá para ligar no menu de pausa
+  const optDpad = $('#opt-dpad');
+  const applyDpad = (on) => {
+    document.documentElement.classList.toggle('dpad-on', on);
+    optDpad.checked = on;
+    requestAnimationFrame(layout);
+  };
+  applyDpad(store.get('dpad', false));
+  optDpad.addEventListener('change', () => {
+    store.set('dpad', optDpad.checked);
+    applyDpad(optDpad.checked);
+  });
 
   $('#btn-play').addEventListener('click', () => { Snd.init(); newGame(); });
   // No celular: 5 toques rápidos no número da fase também pulam 5 fases
