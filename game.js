@@ -629,8 +629,8 @@
       const r = d0[c] / maxD;
       if (r > 0.1 && r < 0.85) { items.set(c, 'coberta'); cobIdx.push(c); }
     }
-    // Roupinha: a partir da fase 20, para enfrentar o frio
-    const nRoupa = n >= 20 ? (n >= 26 ? 2 : 1) : 0;
+    // Roupinha: uma por fase a partir da fase 20, para enfrentar o frio
+    const nRoupa = n >= 20 ? 1 : 0;
     const roupaIdx = [];
     for (const c of pool) {
       if (roupaIdx.length >= nRoupa) break;
