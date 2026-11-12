@@ -30,6 +30,9 @@
     darkTime: 9,         // segundos que a área fica escura
     birdEvery: [18, 28], // passarinho aparece a cada 18 a 28 s (fase 12 em diante)
     birdWarn: 2.2,       // segundos rondando antes de mergulhar
+    coldEvery: [25, 40], // onda de frio a cada 25 a 40 s (fase 20 em diante)
+    coldTime: 15,        // segundos de frio
+    coldSlow: 0.55,      // velocidade do Krug no frio, sem roupinha
     lives: 3,
     braveTime: 7,        // segundos de coragem depois do pão do queijo
     scaredTime: 1.1,     // segundos tremendo depois do má banho
@@ -415,6 +418,16 @@
       this.play(this.randomBark(), { delay: 2.0, rate: 1.7, vol: 0.5 });
     },
     lightsOn() { this.tone(1500, 0.04, 'square', 0.04); this.tone(1100, 0.05, 'square', 0.04, null, 0.06); },
+    /** Vento frio e um "brrr". */
+    cold() {
+      this.noise(1.4, 0.18, 500, 0, 0.5);
+      this.noise(1.2, 0.1, 1400, 0.2, 0.6);
+      this.chatter(0.9);
+    },
+    /** Dentinhos batendo de frio. */
+    chatter(delay = 0) {
+      for (let i = 0; i < 7; i++) this.noise(0.025, 0.2, 3200, delay + i * 0.06, 3);
+    },
     hiss() { this.noise(0.55, 0.22, 4500, 0, 0.7); },
     meow(delay = 0) {
       if (!this.on || !this.ac) return;
@@ -616,7 +629,16 @@
       const r = d0[c] / maxD;
       if (r > 0.1 && r < 0.85) { items.set(c, 'coberta'); cobIdx.push(c); }
     }
-    const must = paoIdx.concat(cobIdx);
+    // Roupinha: a partir da fase 20, para enfrentar o frio
+    const nRoupa = n >= 20 ? (n >= 26 ? 2 : 1) : 0;
+    const roupaIdx = [];
+    for (const c of pool) {
+      if (roupaIdx.length >= nRoupa) break;
+      if (items.has(c)) continue;
+      const r = d0[c] / maxD;
+      if (r > 0.08 && r < 0.6) { items.set(c, 'roupa'); roupaIdx.push(c); }
+    }
+    const must = paoIdx.concat(cobIdx, roupaIdx);
     const theme = themeFor(n);
 
     // Má banho parado: nunca pode bloquear todos os caminhos
@@ -731,6 +753,7 @@
       goal: { x: goalIdx % W, y: (goalIdx / W) | 0 },
       items, baths, idx, theme, popTotal: pc, paoTotal: paoIdx.length, suns, sunAt, cats, blocked, tunnels, tunnelAt,
       goalMoves: n >= 8, bowlTimer: CFG.bowlEvery[0] + Math.random() * (CFG.bowlEvery[1] - CFG.bowlEvery[0]), bowlWarn: 0, bowlPop: 0,
+      cold: { on: false, t: 0, timer: n >= 20 ? 10 + Math.random() * 8 : Infinity },
       darkState: { on: false, timer: n >= 15 && n % 2 === 1 ? 6 + Math.random() * 4 : Infinity },
       bird: { state: null, timer: n >= 12 ? 12 + Math.random() * 6 : Infinity },
     };
@@ -756,7 +779,7 @@
     cx: 1, cy: 1, x: 1, y: 1, dir: null, prog: 0, moving: false, queue: null, queueT: 0,
     napT: 0, napDir: null, sunZone: null, zzz: 0,
     barkT: 0, barkEvery: 0, barkCat: null, catCooldown: 0, barkShake: 0, hopT: 0, sick: false,
-    tunnelT: 0, tunnel: null, tunnelLock: null, carried: false,
+    tunnelT: 0, tunnel: null, tunnelLock: null, carried: false, dressed: false, brrr: 0,
     angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0, bumpDir: [0, 0], shield: false, shieldPop: 0,
   };
   const particles = [];
@@ -998,6 +1021,7 @@
   }
 
   function drawBath(g, x, y, s, t = 0, moving = false) {
+    s *= 1.25; // banheira maior que a casa, para ser vista de longe
     const w = s * 0.82, h = s * 0.6;
     const wob = Math.sin(t * (moving ? 9 : 3)) * s * 0.02;
     g.save();
@@ -1036,13 +1060,16 @@
   }
 
   function drawBowl(g, x, y, s, t = 0) {
-    const r = s * 0.45;
+    const r = s * 0.6;
     g.save();
     g.translate(x, y);
     const pulse = 0.5 + Math.sin(t * 3) * 0.5;
-    // Brilho chamando a atenção para o objetivo
-    g.fillStyle = `rgba(255,236,140,${0.3 + pulse * 0.35})`;
+    // Brilho e anel pulsando, chamando a atenção para o objetivo
+    g.fillStyle = `rgba(255,236,140,${0.35 + pulse * 0.35})`;
     g.beginPath(); g.arc(0, 0, r * (1.15 + pulse * 0.2), 0, Math.PI * 2); g.fill();
+    g.strokeStyle = `rgba(255,210,60,${0.9 - pulse * 0.5})`;
+    g.lineWidth = Math.max(2, s * 0.07);
+    g.beginPath(); g.arc(0, 0, r * (1.25 + pulse * 0.35), 0, Math.PI * 2); g.stroke();
     g.fillStyle = 'rgba(0,0,0,.25)';
     g.beginPath(); g.arc(s * 0.05, s * 0.07, r, 0, Math.PI * 2); g.fill();
     // Tigela azul com borda de inox
@@ -1097,6 +1124,49 @@
     g.strokeStyle = '#7d8590';
     g.lineWidth = Math.max(1, s * 0.03);
     roundRect(g, -w / 2, -h / 2, w, h, s * 0.08); g.stroke();
+    g.restore();
+  }
+
+  /** Roupinha azul-marinho com punhos canelados, como o moletom do Krug. */
+  function drawRoupa(g, x, y, s, t = 0) {
+    const bob = Math.sin(t * 2.4 + x * 0.05) * s * 0.02;
+    g.save();
+    g.translate(x, y + bob);
+    g.fillStyle = 'rgba(0,0,0,.2)';
+    g.beginPath(); g.ellipse(s * 0.04, s * 0.3, s * 0.3, s * 0.08, 0, 0, Math.PI * 2); g.fill();
+    const navy = '#2f4377', rib = '#4d64a3';
+    // Mangas
+    g.fillStyle = navy;
+    roundRect(g, -s * 0.4, -s * 0.2, s * 0.2, s * 0.32, s * 0.06); g.fill();
+    roundRect(g, s * 0.2, -s * 0.2, s * 0.2, s * 0.32, s * 0.06); g.fill();
+    // Corpo
+    roundRect(g, -s * 0.24, -s * 0.24, s * 0.48, s * 0.5, s * 0.08); g.fill();
+    // Gola e punhos
+    g.fillStyle = rib;
+    roundRect(g, -s * 0.12, -s * 0.28, s * 0.24, s * 0.1, s * 0.04); g.fill();
+    g.fillRect(-s * 0.4, s * 0.06, s * 0.2, s * 0.06);
+    g.fillRect(s * 0.2, s * 0.06, s * 0.2, s * 0.06);
+    g.fillRect(-s * 0.24, s * 0.18, s * 0.48, s * 0.08);
+    // Patinha branca no peito
+    g.fillStyle = 'rgba(255,255,255,.85)';
+    const pr = s * 0.035;
+    g.beginPath(); g.ellipse(0, s * 0.03, pr * 1.5, pr * 1.2, 0, 0, Math.PI * 2); g.fill();
+    [[-1.5, -1.5], [-0.5, -2.2], [0.5, -2.2], [1.5, -1.5]].forEach(([a, b]) => { g.beginPath(); g.arc(a * pr, s * 0.03 + b * pr, pr * 0.6, 0, Math.PI * 2); g.fill(); });
+    g.restore();
+  }
+
+  /** O Krug vestido com a roupinha (anel azul-marinho canelado em volta da tampinha). */
+  function drawSweater(g, x, y, R, t) {
+    g.save();
+    g.translate(x, y);
+    g.lineWidth = R * 0.34;
+    g.strokeStyle = '#2f4377';
+    g.beginPath(); g.arc(0, 0, R * 1.08, 0, Math.PI * 2); g.stroke();
+    g.strokeStyle = 'rgba(120,150,215,.55)';
+    g.lineWidth = R * 0.34;
+    g.setLineDash([R * 0.06, R * 0.12]);
+    g.beginPath(); g.arc(0, 0, R * 1.08, 0, Math.PI * 2); g.stroke();
+    g.setLineDash([]);
     g.restore();
   }
 
@@ -1233,7 +1303,7 @@
     g.restore();
   }
 
-  /** Gato gordinho cinza, visto de cima. */
+  /** Gato gordinho azul, visto de cima. */
   function drawCat(g, x, y, s, c, t) {
     const R = s * 0.4;
     const puff = c.puff || 0;
@@ -1246,11 +1316,11 @@
     // Rabo (estufado quando o Krug late)
     const sw = Math.sin(t * (c.mode === 'sit' ? 2 : 5) + c.phase) * R * 0.6 * (1 - puff * 0.8);
     g.lineCap = 'round';
-    g.strokeStyle = '#5f656d';
+    g.strokeStyle = '#3f5f9e';
     g.lineWidth = R * (0.3 + puff * 0.4);
     g.beginPath(); g.moveTo(-R * 0.8, 0); g.quadraticCurveTo(-R * 1.5, sw, -R * 1.65, sw * 1.5 + R * 0.35); g.stroke();
     if (puff > 0.3) {
-      g.strokeStyle = 'rgba(200,205,212,.7)';
+      g.strokeStyle = 'rgba(195,215,248,.7)';
       g.lineWidth = Math.max(1, R * 0.06);
       for (let k = 0; k < 7; k++) {
         const a = k / 6;
@@ -1261,7 +1331,7 @@
     // Patinhas aparecendo ao andar
     if (moving) {
       const st = Math.sin(t * (c.mode === 'flee' ? 24 : 9));
-      g.fillStyle = '#8a9098';
+      g.fillStyle = '#5f86c9';
       [[0.45, 0.62, 1], [0.45, -0.62, -1], [-0.45, 0.62, -1], [-0.45, -0.62, 1]].forEach(([px, py, ph]) => {
         g.beginPath(); g.arc(px * R + st * ph * R * 0.18, py * R, R * 0.17, 0, Math.PI * 2); g.fill();
       });
@@ -1269,23 +1339,23 @@
     // Corpo gordinho
     const k = 1 + puff * 0.12;
     const body = g.createRadialGradient(-R * 0.3, -R * 0.3, R * 0.1, -R * 0.1, 0, R * 1.05);
-    body.addColorStop(0, '#c3c8ce');
-    body.addColorStop(1, '#7e848c');
+    body.addColorStop(0, '#a7c6f2');
+    body.addColorStop(1, '#4f74b8');
     g.fillStyle = body;
     g.beginPath(); g.ellipse(-R * 0.1, 0, R * 1.0 * k, R * 0.85 * k, 0, 0, Math.PI * 2); g.fill();
     // Listras
-    g.strokeStyle = 'rgba(70,75,82,.5)';
+    g.strokeStyle = 'rgba(35,55,105,.5)';
     g.lineWidth = R * 0.12;
     for (let i = -1; i <= 1; i++) {
       const sx = -R * 0.15 + i * R * 0.38;
       g.beginPath(); g.moveTo(sx, -R * 0.72); g.quadraticCurveTo(sx - R * 0.15, 0, sx, R * 0.72); g.stroke();
     }
     // Cabeça
-    g.fillStyle = '#9ba1a9';
+    g.fillStyle = '#7aa3e0';
     g.beginPath(); g.arc(R * 0.85, 0, R * 0.5, 0, Math.PI * 2); g.fill();
     // Orelhas
     [1, -1].forEach((sg) => {
-      g.fillStyle = '#7e848c';
+      g.fillStyle = '#4f74b8';
       g.beginPath(); g.moveTo(R * 0.62, sg * R * 0.18); g.lineTo(R * 0.98, sg * R * 0.42); g.lineTo(R * 0.6, sg * R * 0.68); g.closePath(); g.fill();
       g.fillStyle = '#e7a9b4';
       g.beginPath(); g.moveTo(R * 0.67, sg * R * 0.28); g.lineTo(R * 0.88, sg * R * 0.42); g.lineTo(R * 0.66, sg * R * 0.56); g.closePath(); g.fill();
@@ -1702,6 +1772,19 @@
       floatText(px, py, '+' + CFG.pts.pao, '#ffe08a');
       banner('Krug corajoso!', 'Agora o má banho é que foge');
       Snd.pao();
+    } else if (it === 'roupa') {
+      L.items.delete(i);
+      burst(px, py, '#3d5a9e', 12, 3, 0.09);
+      if (K.dressed) {
+        S.score += CFG.pts.coberta;
+        floatText(px, py, '+' + CFG.pts.coberta, '#e9edf1');
+      } else {
+        K.dressed = true;
+        banner('Roupinha!', 'Agora o frio não deixa o Krug lento');
+      }
+      K.happyT = 0.6;
+      Snd.coberta();
+      updateHud();
     } else if (it === 'coberta') {
       L.items.delete(i);
       burst(px, py, '#d6dbe0', 14, 3, 0.1);
@@ -2001,6 +2084,73 @@
     Snd.birdMiss();
   }
 
+  // ---------------------------------------------------------------------------
+  // Frio (fase 20 em diante): sem roupinha, o Krug fica lento
+  // ---------------------------------------------------------------------------
+  let coldHintShown = false;
+  const snow = [];
+  function stepCold(dt) {
+    const C = L.cold;
+    if (!C.on) {
+      C.timer -= dt;
+      if (C.timer <= 0) {
+        Object.assign(C, { on: true, t: 0 });
+        Snd.cold();
+        if (!coldHintShown || !K.dressed) {
+          coldHintShown = true;
+          banner('Esfriou!', K.dressed ? 'Ainda bem que o Krug está de roupinha' : 'Sem roupinha, o Krug fica lento');
+        }
+      }
+      return;
+    }
+    C.t += dt;
+    if (!K.dressed && !K.carried && K.tunnelT <= 0) {
+      K.brrr -= dt;
+      if (K.brrr <= 0) { K.brrr = 1.3; floatText(K.x + 0.5, K.y + 0.1, 'brrr', '#cfe6ff'); Snd.chatter(); }
+    }
+    if (C.t >= CFG.coldTime) {
+      C.on = false;
+      C.timer = CFG.coldEvery[0] + Math.random() * (CFG.coldEvery[1] - CFG.coldEvery[0]);
+    }
+  }
+
+  /** Quanto frio está agora (0 a 1), entrando e saindo aos poucos. */
+  function coldAlpha() {
+    const C = L.cold;
+    if (!C.on) return 0;
+    return Math.min(1, C.t / 1.2, (CFG.coldTime - C.t) / 1.2);
+  }
+
+  /** Neve caindo e geada nas bordas da tela. */
+  function drawCold(dt) {
+    const a = coldAlpha();
+    if (a <= 0 && !snow.length) return;
+    if (a > 0) {
+      const want = Math.round((vw * vh) / 6000 * a);
+      while (snow.length < want) snow.push({ x: Math.random() * vw, y: -10 - Math.random() * vh * 0.3, r: 1.5 + Math.random() * 2.5, vy: 30 + Math.random() * 50, ph: Math.random() * 6 });
+    }
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const vg = ctx.createRadialGradient(vw / 2, vh / 2, Math.min(vw, vh) * 0.35, vw / 2, vh / 2, Math.max(vw, vh) * 0.75);
+    vg.addColorStop(0, 'rgba(200,230,255,0)');
+    vg.addColorStop(1, `rgba(215,238,255,${0.6 * a})`);
+    ctx.fillStyle = `rgba(170,210,255,${0.12 * a})`; // tudo um pouco mais azulado
+    ctx.fillRect(0, 0, vw, vh);
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, vw, vh);
+    ctx.fillStyle = 'rgba(255,255,255,.9)';
+    for (let i = snow.length - 1; i >= 0; i--) {
+      const f = snow[i];
+      f.y += f.vy * dt;
+      f.ph += dt * 2;
+      const x = f.x + Math.sin(f.ph) * 8;
+      if (f.y > vh + 10) { if (a > 0) { f.y = -10; f.x = Math.random() * vw; } else { snow.splice(i, 1); continue; } }
+      ctx.globalAlpha = Math.max(0.3, a);
+      ctx.beginPath(); ctx.arc(x, f.y, f.r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
   function moveBowl() {
     const W = L.W;
     const kx = Math.round(K.x), ky = Math.round(K.y);
@@ -2068,7 +2218,8 @@
       if (K.napT <= 0) wake();
       if (K.napT > 0) { K.x = K.cx; K.y = K.cy; return; }
     }
-    let dist = CFG.speed * dt;
+    const chilly = L.cold.on && !K.dressed;
+    let dist = CFG.speed * dt * (chilly ? CFG.coldSlow : 1);
     while (dist > 0 && K.moving) {
       const d = Math.min(dist, 1 - K.prog);
       K.prog += d;
@@ -2234,7 +2385,7 @@
     c.dir = catDirTo(c, nxt);
     c.prog = 0;
     c.puff = 1;
-    burst(c.x + 0.5, c.y + 0.5, '#9aa0a8', 10, 3, 0.08);
+    burst(c.x + 0.5, c.y + 0.5, '#7aa3e0', 10, 3, 0.08);
     Snd.meow();
   }
 
@@ -2330,7 +2481,7 @@
       queue: null, angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0, saved: false, stopReq: false,
       napT: 0, napDir: null, sunZone: null, zzz: 0,
       barkT: 0, barkEvery: 0, barkCat: null, catCooldown: 0, barkShake: 0, hopT: 0, sick: false,
-      tunnelT: 0, tunnel: null, tunnelLock: null, carried: false,
+      tunnelT: 0, tunnel: null, tunnelLock: null, carried: false, dressed: false, brrr: 0,
     });
     particles.length = 0;
     floaters.length = 0;
@@ -2486,7 +2637,7 @@
     return { x, scared, tScare, run, R: R * 0.85, jump: scared && t - tScare < 0.35 ? Math.sin(((t - tScare) / 0.35) * Math.PI) : 0 };
   }
 
-  /** Gato gordinho cinza visto de lado (só no intervalo). */
+  /** Gato gordinho azul visto de lado (só no intervalo). */
   function drawCatSide(g, x, floorY, R, t, st) {
     const running = st.run > 0;
     const y = floorY - R * 0.95 - st.jump * R * 0.9 - (running ? Math.abs(Math.sin(t * 20)) * R * 0.12 : 0);
@@ -2500,14 +2651,14 @@
     g.scale(dirX, 1);
     // Rabo: enrolado no chão quando calmo, em pé e estufado quando irritado
     g.lineCap = 'round';
-    g.strokeStyle = '#5f656d';
+    g.strokeStyle = '#3f5f9e';
     g.lineWidth = R * (st.scared ? 0.42 : 0.22);
     g.beginPath();
     if (st.scared) { g.moveTo(-R * 0.9, -R * 0.1); g.quadraticCurveTo(-R * 1.5, -R * 0.6, -R * 1.25, -R * 1.5); }
     else { const sw = Math.sin(t * 3) * R * 0.15; g.moveTo(-R * 0.8, R * 0.6); g.quadraticCurveTo(-R * 1.6, R * 0.9 + sw, -R * 1.2, R * 0.35); }
     g.stroke();
     if (st.scared) {
-      g.strokeStyle = 'rgba(200,205,212,.8)';
+      g.strokeStyle = 'rgba(195,215,248,.8)';
       g.lineWidth = Math.max(1, R * 0.06);
       for (let k = 0; k < 7; k++) {
         const a = k / 6;
@@ -2516,7 +2667,7 @@
       }
     }
     // Patas
-    g.fillStyle = '#7e848c';
+    g.fillStyle = '#4f74b8';
     const legs = running ? [[-0.55, 1], [-0.25, -1], [0.3, 1], [0.6, -1]] : [[-0.4, 0], [0.45, 0]];
     legs.forEach(([lx, ph]) => {
       const sw = running ? Math.sin(t * 24) * ph * R * 0.25 : 0;
@@ -2525,21 +2676,21 @@
     // Corpo gordinho
     const puff = st.scared ? 1.12 : 1;
     const body = g.createRadialGradient(-R * 0.2, -R * 0.4, R * 0.1, 0, 0, R * 1.1);
-    body.addColorStop(0, '#c3c8ce');
-    body.addColorStop(1, '#7e848c');
+    body.addColorStop(0, '#a7c6f2');
+    body.addColorStop(1, '#4f74b8');
     g.fillStyle = body;
     g.beginPath();
     if (running) g.ellipse(0, R * 0.1, R * 1.05 * puff, R * 0.7 * puff, 0, 0, Math.PI * 2);
     else g.ellipse(0, R * 0.1, R * 0.85 * puff, R * 0.8 * puff, 0, 0, Math.PI * 2);
     g.fill();
-    g.strokeStyle = 'rgba(70,75,82,.5)';
+    g.strokeStyle = 'rgba(35,55,105,.5)';
     g.lineWidth = R * 0.12;
     for (let i = -1; i <= 1; i++) {
       g.beginPath(); g.moveTo(i * R * 0.35, -R * 0.6 * puff); g.quadraticCurveTo(i * R * 0.35 - R * 0.12, R * 0.05, i * R * 0.35, R * 0.4); g.stroke();
     }
     // Cabeça
     const hx = running ? R * 1.0 : R * 0.55, hy = running ? -R * 0.25 : -R * 0.6;
-    g.fillStyle = '#9ba1a9';
+    g.fillStyle = '#7aa3e0';
     g.beginPath(); g.arc(hx, hy, R * 0.5, 0, Math.PI * 2); g.fill();
     // Orelhas (para trás quando irritado)
     const earTilt = st.scared ? 0.6 : 0;
@@ -2547,7 +2698,7 @@
       g.save();
       g.translate(hx + ex * R, hy - R * 0.35);
       g.rotate(-earTilt);
-      g.fillStyle = '#7e848c';
+      g.fillStyle = '#4f74b8';
       g.beginPath(); g.moveTo(-R * 0.17, R * 0.05); g.lineTo(0, -R * 0.38); g.lineTo(R * 0.17, R * 0.05); g.closePath(); g.fill();
       g.fillStyle = '#e7a9b4';
       g.beginPath(); g.moveTo(-R * 0.08, 0); g.lineTo(0, -R * 0.22); g.lineTo(R * 0.08, 0); g.closePath(); g.fill();
@@ -2858,6 +3009,7 @@
       $('#hud-lives').innerHTML = h;
     }
     $('#hud-shield').classList.toggle('on', !!K.shield);
+    $('#hud-roupa').classList.toggle('on', !!K.dressed);
   }
   function updateSoundBtn() { $('#btn-sound').innerHTML = Snd.on ? SND_ON : SND_OFF; }
 
@@ -2865,9 +3017,11 @@
   // Laço principal
   // ---------------------------------------------------------------------------
   let last = performance.now();
+  let frameDt = 0;
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
+    frameDt = S.mode === 'play' ? dt : 0;
     update(dt);
     render();
     requestAnimationFrame(frame);
@@ -2894,6 +3048,7 @@
       if (L.goalMoves) stepBowl(dt);
       stepDark(dt);
       stepBird(dt);
+      stepCold(dt);
     }
     if (K.barkShake > 0) K.barkShake = Math.max(0, K.barkShake - dt);
     if (K.happyT > 0) K.happyT = Math.max(0, K.happyT - dt);
@@ -2956,6 +3111,7 @@
       if (type === 'popoca') drawPopoca(ctx, P(x), P(y), TS, t);
       else if (type === 'pao') drawPao(ctx, P(x), P(y), TS, t);
       else if (type === 'ovoBranco') drawEgg(ctx, P(x), P(y), TS, t, false);
+      else if (type === 'roupa') drawRoupa(ctx, P(x), P(y), TS, t);
       else if (type === 'ovoPreto') drawEgg(ctx, P(x), P(y), TS, t, true);
       else drawCoberta(ctx, P(x), P(y), TS, t);
     }
@@ -2991,6 +3147,7 @@
     let kx = P(K.x), ky = P(K.y);
     if (K.scaredT > 0) { kx += Math.sin(t * 60) * TS * 0.06; ky += Math.cos(t * 47) * TS * 0.04; }
     if (K.barkShake > 0) { const k = K.barkShake / 0.15; ky -= Math.sin(k * Math.PI) * TS * 0.1; }
+    if (L.cold.on && !K.dressed) kx += Math.sin(t * 70) * TS * 0.025; // tremendo de frio
     let hopScale = 1;
     if (K.hopT > 0) {
       const k = 1 - K.hopT / 0.6;
@@ -3008,7 +3165,8 @@
     if (K.tunnelT > 0) ctx.globalAlpha = 0;
     if (K.carried) { ctx.translate(kx, ky); ctx.rotate(Math.sin(t * 9) * 0.25); ctx.scale(0.85, 0.85); ctx.translate(-kx, -ky); }
     const scale = S.mode === 'levelDone' ? 1 + Math.sin(t * 10) * 0.06 : 1;
-    if (K.shield) drawWrap(ctx, kx, ky, TS * 0.47 * scale * (1 + K.shieldPop * 0.6), t);
+    if (K.dressed) drawSweater(ctx, kx, ky, TS * 0.47 * scale, t);
+    if (K.shield) drawWrap(ctx, kx, ky, TS * 0.47 * scale * (1 + K.shieldPop * 0.6) * (K.dressed ? 1.18 : 1), t);
     drawCap(ctx, kx, ky, TS * 0.47 * scale * hopScale, K.angle, face, { glow: braveBlink });
     if (K.queue && K.moving) drawQueueArrow(ctx, kx, ky, TS * 0.47, K.queue, t);
     ctx.restore();
@@ -3087,6 +3245,8 @@
     }
 
     drawChip();
+
+    drawCold(frameDt);
 
     // Faixa de mensagem
     if (S.banner) {
@@ -3257,11 +3417,12 @@
       const g = c.getContext('2d');
       g.scale(r, r);
       const type = c.dataset.icon;
-      if (type === 'bowl') drawBowl(g, s / 2, s / 2, s * 0.95, 1.5);
+      if (type === 'bowl') drawBowl(g, s / 2, s / 2, s * 0.7, 1.5);
       if (type === 'popoca') drawPopoca(g, s / 2, s / 2, s * 0.95, 0);
       if (type === 'pao') drawPao(g, s / 2, s / 2, s * 1.1, 0);
-      if (type === 'bath') drawBath(g, s / 2, s / 2, s * 1.05, 0);
+      if (type === 'bath') drawBath(g, s / 2, s / 2, s * 0.9, 0);
       if (type === 'coberta') drawCoberta(g, s / 2, s / 2, s * 1.1, 0);
+      if (type === 'roupa') drawRoupa(g, s / 2, s / 2 - 1, s * 1.05, 0);
       if (type === 'bird') { g.save(); drawBirdTop(g, s / 2, s / 2, s * 1.2, 0.3, -Math.PI / 2); g.restore(); }
       if (type === 'dark') {
         g.fillStyle = '#c99a6b'; g.fillRect(0, 0, s, s);

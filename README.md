@@ -17,12 +17,13 @@ Jogo web de labirinto visto de cima. O jogador conduz a tampinha de refrigerante
 | Pão do queijo | +50 pontos e coragem por 7 segundos: o Krug espanta o má banho (+30) |
 | Cobertinha | Protege o Krug de um toque do má banho (aparece a partir da fase 2; se já estiver com uma, vale +20) |
 | Raio de sol | O Krug para 1,6 s para se aquecer e depois segue na mesma direção (ou na que você escolher enquanto ele cochila). Aparece a partir da fase 2 |
-| Gato gordinho | A partir da fase 4 (dois a partir da fase 10). Se o Krug vê o gato no mesmo corredor reto, a até 4 casas e sem parede no meio, esquece de tudo: para e late por 2,5 s sem obedecer aos controles. Depois o gato foge ofendido para outro canto, e o Krug fica 4 s sem se distrair de novo. As casas vigiadas pelo gato ficam levemente avermelhadas |
+| Gato gordinho (azul) | A partir da fase 4 (dois a partir da fase 10). Se o Krug vê o gato no mesmo corredor reto, a até 4 casas e sem parede no meio, esquece de tudo: para e late por 2,5 s sem obedecer aos controles. Depois o gato foge ofendido para outro canto, e o Krug fica 4 s sem se distrair de novo. As casas vigiadas pelo gato ficam levemente avermelhadas |
 | Ovo de chocolate branco | A partir da fase 10: o Krug come, ganha 40 pontos e dá um saltinho feliz |
 | Ovo de chocolate preto | A partir da fase 10: chocolate preto faz mal a cachorro, o Krug perde uma patinha (sem voltar ao começo). Nunca bloqueia o caminho |
 | Túnel | A partir da fase 6 (dois pares a partir da fase 12). Cada par liga dois becos sem saída distantes, com as bocas da mesma cor. O Krug entra rolando numa boca, passa 0,6 s invisível e protegido, e sai rolando pela outra. Banho e gato não passam. Dá para escolher a direção ou pedir para parar durante a travessia |
 | Passarinho | A partir da fase 12, aparece a cada 18 a 28 s, ronda o Krug piando por cerca de 2 s (com uma sombra embaixo dele) e mergulha. Se o Krug estiver andando, é levado pelo ar e solto em outro ponto seguro do labirinto. Se estiver parado (ou dentro de um túnel), despista o passarinho, que vai embora |
 | Apagão | Nas fases ímpares a partir da 15, a cada 20 a 30 s a luz apaga a partir de um ponto aleatório e a escuridão escorre pelos corredores, acompanhando as paredes, até cobrir cerca de 40% do labirinto; 9 s depois a luz volta pelo mesmo caminho. Toca um som de terror engraçado. A borda da escuridão é esfumada, só uma luzinha em volta do Krug continua acesa, e os olhos do gato brilham no escuro |
+| Frio e roupinha | A partir da fase 20, às vezes esfria (primeira vez 10 a 18 s após o início, depois a cada 25 a 40 s, por 15 s): neva, as bordas da tela ficam geladas e o Krug, sem roupinha, treme e anda a 55% da velocidade. A roupinha (1 por fase, 2 a partir da fase 26) devolve a velocidade normal até o fim da fase; ao mudar de fase, o Krug perde a roupinha |
 | Má banho | O Krug perde uma patinha e volta ao começo da fase |
 
 ### Atalho de teste
