@@ -66,19 +66,19 @@
       </header>
       <div class="start-body">
         <ul class="legend">
-          <li><canvas data-icon="bowl"></canvas><span><strong>Tigela de papá</strong> é o objetivo de cada fase.</span></li>
+          <li><canvas data-icon="bowl"></canvas><span><strong>Tigela de papá</strong> é o objetivo de cada fase. A partir da fase 15, ela foge de vez em quando.</span></li>
           <li><canvas data-icon="popoca"></canvas><span><strong>Popoca</strong> vale 10 pontos.</span></li>
           <li><canvas data-icon="pao"></canvas><span><strong>Pão do queijo</strong> vale 50 pontos e deixa o Krug corajoso por alguns segundos.</span></li>
-          <li><canvas data-icon="coberta"></canvas><span><strong>Cobertinha</strong> protege o Krug de um má banho.</span></li>
-          <li><canvas data-icon="sun"></canvas><span><strong>Raio de sol</strong> faz o Krug parar um instante para se aquecer.</span></li>
-          <li><canvas data-icon="cat"></canvas><span><strong>Gato gordinho</strong> (azul): se o Krug vê o gato no mesmo corredor, esquece de tudo e fica latindo.</span></li>
-          <li><canvas data-icon="ovoBranco"></canvas><span><strong>Ovo de chocolate branco</strong>: o Krug come e dá um saltinho feliz.</span></li>
-          <li><canvas data-icon="ovoPreto"></canvas><span><strong>Ovo de chocolate preto</strong> faz mal a cachorro: o Krug perde uma patinha.</span></li>
-          <li><canvas data-icon="tunnel"></canvas><span><strong>Túnel</strong>: o Krug entra numa boca e sai pela outra da mesma cor. Banho e gato não passam.</span></li>
-          <li><canvas data-icon="bird"></canvas><span><strong>Passarinho</strong>: se pegar o Krug andando, leva para outro canto do labirinto. Fique parado para despistar.</span></li>
-          <li><canvas data-icon="dark"></canvas><span><strong>Apagão</strong>: nas fases ímpares a partir da 15, parte do labirinto fica escura por alguns segundos.</span></li>
-          <li><canvas data-icon="roupa"></canvas><span><strong>Roupinha</strong>: a partir da fase 20, às vezes esfria e o Krug fica lento; de roupinha ele anda normal até o fim da fase.</span></li>
-          <li><canvas data-icon="bath"></canvas><span><strong>Má banho</strong> dá medo: o Krug perde uma patinha e volta ao começo.</span></li>
+          <li><canvas data-icon="coberta"></canvas><span><strong>Cobertinha</strong> (fase 3): protege o Krug de um má banho.</span></li>
+          <li><canvas data-icon="sun"></canvas><span><strong>Raio de sol</strong> (fase 5): o Krug para um instante para se aquecer.</span></li>
+          <li><canvas data-icon="cat"></canvas><span><strong>Gato gordinho</strong> (fase 9): se o Krug vê o gato no mesmo corredor, esquece de tudo e fica latindo.</span></li>
+          <li><canvas data-icon="ovoBranco"></canvas><span><strong>Ovo de chocolate branco</strong> (fase 18): o Krug come e dá um saltinho feliz.</span></li>
+          <li><canvas data-icon="ovoPreto"></canvas><span><strong>Ovo de chocolate preto</strong> (fase 18) faz mal a cachorro: o Krug perde uma patinha.</span></li>
+          <li><canvas data-icon="tunnel"></canvas><span><strong>Túnel</strong> (fase 12): o Krug entra numa boca e sai pela outra da mesma cor. Banho e gato não passam.</span></li>
+          <li><canvas data-icon="bird"></canvas><span><strong>Passarinho</strong> (fase 21): se pegar o Krug andando, leva para outro canto do labirinto. Fique parado para despistar.</span></li>
+          <li><canvas data-icon="dark"></canvas><span><strong>Apagão</strong>: nas fases ímpares a partir da 25, parte do labirinto fica escura por alguns segundos.</span></li>
+          <li><canvas data-icon="roupa"></canvas><span><strong>Roupinha</strong>: a partir da fase 30, às vezes esfria e o Krug fica lento; de roupinha ele anda normal até o fim da fase.</span></li>
+          <li><canvas data-icon="bath"></canvas><span><strong>Má banho</strong> dá medo: o Krug perde uma patinha e volta ao começo. A partir da fase 7, alguns andam.</span></li>
         </ul>
         <p class="hint">Cada fase vale até 3 estrelas: chegar à tigela, comer todas as popocas e comer todos os pães do queijo. A cada 5 fases o Krug muda de cômodo, e a cada 3 fases concluídas ele recupera uma patinha.</p>
         <p class="hint" id="controls-hint">Use as setas do teclado (ou W A S D). A tampinha rola reto até bater na parede; escolha outra direção e ela vira assim que puder. A barra de espaço para o Krug.</p>
@@ -118,6 +118,17 @@
   <section id="screen-cut" class="cutscene hidden" aria-label="Intervalo: o Krug correndo atrás da tigela de papá">
     <canvas id="cut"></canvas>
     <p class="skip">Toque para pular</p>
+  </section>
+
+  <!-- Novidade da fase -->
+  <section id="screen-new" class="overlay hidden">
+    <div class="card small novidade">
+      <p class="kicker">Novidade na fase <span id="new-level"></span></p>
+      <div class="new-icons" id="new-icons"></div>
+      <h2 id="new-title"></h2>
+      <p id="new-text"></p>
+      <button class="btn" id="btn-new-go">Vamos lá!</button>
+    </div>
   </section>
 
   <!-- Pausa -->

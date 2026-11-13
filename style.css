@@ -266,3 +266,10 @@ h2 { margin: 10px 0 4px; font-size: 1.8rem; line-height: 1.1; color: var(--teal-
 .toggle input:checked + .switch { background: var(--teal-dark); }
 .toggle input:checked + .switch::after { transform: translateX(18px); }
 .toggle input:focus-visible + .switch { outline: 3px solid var(--gold); outline-offset: 2px; }
+
+/* ---------- Cartão de novidade ---------- */
+.novidade .kicker { margin: 0; font-weight: 800; color: var(--red-dark); text-transform: uppercase; letter-spacing: .06em; font-size: .85rem; }
+.new-icons { display: flex; justify-content: center; gap: 12px; margin: 12px 0 4px; }
+.new-icons canvas { width: 64px; height: 64px; background: #f1e2c8; border-radius: 16px; animation: pop .4s cubic-bezier(.2, 1.6, .4, 1); }
+.novidade h2 { margin-top: 6px; }
+.novidade p { line-height: 1.35; }

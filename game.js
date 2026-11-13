@@ -558,11 +558,35 @@
 
   const TUNNEL_COLORS = ['#f2c14e', '#a77be0', '#5cc28a'];
 
+  /**
+   * Fase em que cada novidade aparece pela primeira vez: uma a cada 3 fases,
+   * com uma fase de respiro entre elas. As versões "em dobro" vêm depois.
+   */
+  const INTRO = {
+    coberta: 3, sun: 5, movingBath: 7, cat: 9, tunnel: 12,
+    bowlMoves: 15, eggs: 18, bird: 21, dark: 25, cold: 30,
+  };
+  const DOUBLE = { coberta: 10, cat: 16, tunnel: 19 };
+
+  /** Cartão mostrado antes da fase em que a novidade aparece. */
+  const NOVIDADES = {
+    [INTRO.coberta]: { icons: ['coberta'], title: 'Cobertinha', text: 'Pegue a cobertinha: ela protege o Krug de um toque do má banho e fica com ele até ser usada, mesmo mudando de fase.' },
+    [INTRO.sun]: { icons: ['sun'], title: 'Raio de sol', text: 'Ao passar por uma faixa de sol, o Krug para um pouquinho para se aquecer. Cuidado se tiver má banho por perto.' },
+    [INTRO.movingBath]: { icons: ['bath'], title: 'Má banho andando', text: 'Agora alguns banhos andam de um lado para o outro nos corredores. Espere a hora certa para passar.' },
+    [INTRO.cat]: { icons: ['cat'], title: 'Gato gordinho', text: 'Se o Krug vê o gato no mesmo corredor, esquece de tudo e fica latindo. As casas que o gato vigia ficam avermelhadas.' },
+    [INTRO.tunnel]: { icons: ['tunnel'], title: 'Túnel', text: 'O Krug entra numa boca e sai na outra da mesma cor. O má banho e o gato não passam pelo túnel.' },
+    [INTRO.bowlMoves]: { icons: ['bowl'], title: 'A tigela foge!', text: 'De tempos em tempos a tigela treme e muda de lugar. Siga a seta na borda da tela para achá-la.' },
+    [INTRO.eggs]: { icons: ['ovoBranco', 'ovoPreto'], title: 'Ovos de páscoa', text: 'O de chocolate branco o Krug pode comer e ganha pontos. O de chocolate preto faz mal a cachorro e tira uma patinha.' },
+    [INTRO.bird]: { icons: ['bird'], title: 'Passarinho', text: 'Se pegar o Krug andando, leva para outro canto do labirinto. Quando ele estiver rondando, pare o Krug para despistar.' },
+    [INTRO.dark]: { icons: ['dark'], title: 'Apagão', text: 'Nas fases ímpares, às vezes a luz apaga em parte do labirinto. Só dá para ver pertinho do Krug até ela voltar.' },
+    [INTRO.cold]: { icons: ['roupa'], title: 'Frio e roupinha', text: 'Às vezes esfria e o Krug fica lento. Vista a roupinha para ele andar normal até o fim da fase.' },
+  };
+
   /** Monta uma fase: labirinto, tigela, petiscos e banhos. */
   function buildLevel(n) {
     const portrait = stage.clientHeight >= stage.clientWidth;
-    const small = Math.min(4 + n, 13);
-    const large = Math.min(6 + Math.round(n * 1.5), 21);
+    const small = Math.min(4 + Math.round(n * 0.6), 13);
+    const large = Math.min(6 + n, 21);
     const cw = portrait ? small : large;
     const ch = portrait ? large : small;
     const m = makeMaze(cw, ch, Math.min(0.6, 0.3 + n * 0.03));
@@ -581,7 +605,7 @@
     // Túneis a partir da fase 6: pares de becos sem saída distantes, ligados entre si
     const tunnels = [];
     const tunnelAt = new Map();
-    const nPairs = n >= 6 ? (n >= 12 ? 2 : 1) : 0;
+    const nPairs = n >= INTRO.tunnel ? (n >= DOUBLE.tunnel ? 2 : 1) : 0;
     if (nPairs) {
       const deadEnds = shuffle(cells.filter((c) => c !== goalIdx && d0[c] >= 4 && openCount(m, c % W, (c / W) | 0) === 1));
       const usedEnds = new Set();
@@ -611,7 +635,7 @@
     const pool = shuffle(cells.filter((c) => c !== goalIdx && d0[c] >= 2 && !tunnelAt.has(c)));
 
     // Pão do queijo: espalhado entre o começo e a tigela
-    const nPao = Math.min(1 + Math.floor(n / 2), 5);
+    const nPao = Math.min(1 + Math.floor(n / 3), 5);
     const paoIdx = [];
     const maxD = d0[goalIdx];
     for (const c of pool) {
@@ -621,7 +645,7 @@
     }
 
     // Cobertinha: a partir da fase 2, protege de um toque do má banho
-    const nCob = n >= 2 ? (n >= 8 ? 2 : 1) : 0;
+    const nCob = n >= INTRO.coberta ? (n >= DOUBLE.coberta ? 2 : 1) : 0;
     const cobIdx = [];
     for (const c of pool) {
       if (cobIdx.length >= nCob) break;
@@ -630,7 +654,7 @@
       if (r > 0.1 && r < 0.85) { items.set(c, 'coberta'); cobIdx.push(c); }
     }
     // Roupinha: uma por fase a partir da fase 20, para enfrentar o frio
-    const nRoupa = n >= 20 ? 1 : 0;
+    const nRoupa = n >= INTRO.cold ? 1 : 0;
     const roupaIdx = [];
     for (const c of pool) {
       if (roupaIdx.length >= nRoupa) break;
@@ -648,7 +672,7 @@
       return d[goalIdx] >= 0 && must.every((p) => d[p] >= 0);
     };
     const baths = [];
-    const nStatic = Math.min(Math.round((1 + Math.floor(n * 0.8)) * (theme.key === 'banheiro' ? 1.4 : 1)), 22);
+    const nStatic = Math.min(Math.round((1 + Math.floor(n * 0.5)) * (theme.key === 'banheiro' ? 1.4 : 1)), 22);
     for (const c of shuffle(cells.slice())) {
       if (baths.length >= nStatic) break;
       if (c === goalIdx || items.has(c) || tunnelAt.has(c) || d0[c] < 4) continue;
@@ -661,7 +685,7 @@
     }
 
     // Má banho andando: patrulha um corredor reto, a partir da fase 3
-    const nMoving = n >= 3 ? Math.min(Math.floor((n - 1) / 2), 7) : 0;
+    const nMoving = n >= INTRO.movingBath ? Math.min(1 + Math.floor((n - INTRO.movingBath) / 3), 7) : 0;
     if (nMoving) {
       const segs = straightRuns(m, 3);
       const used = new Set(blocked);
@@ -696,7 +720,7 @@
     // Raio de sol: faixas de 2 ou 3 casas num corredor reto, a partir da fase 2
     const suns = [];
     const sunAt = new Map();
-    const nSun = n >= 2 ? Math.min(1 + Math.floor(n / 3), 6) : 0;
+    const nSun = n >= INTRO.sun ? Math.min(1 + Math.floor((n - INTRO.sun) / 3), 6) : 0;
     for (const r of shuffle(straightRuns(m, 3))) {
       if (suns.length >= nSun) break;
       const len = Math.min(r.tiles.length, Math.random() < 0.5 ? 2 : 3);
@@ -710,8 +734,8 @@
 
     // Ovos de páscoa a partir da fase 10: o preto (faz mal) nunca bloqueia caminho
     const darkSet = new Set();
-    const nDark = n >= 10 ? Math.min(2 + Math.floor((n - 10) / 3), 6) : 0;
-    const nWhite = n >= 10 ? Math.min(2 + Math.floor((n - 10) / 4), 4) : 0;
+    const nDark = n >= INTRO.eggs ? Math.min(2 + Math.floor((n - INTRO.eggs) / 3), 6) : 0;
+    const nWhite = n >= INTRO.eggs ? Math.min(2 + Math.floor((n - INTRO.eggs) / 4), 4) : 0;
     for (const c of shuffle(cells.slice())) {
       if (darkSet.size >= nDark) break;
       if (c === goalIdx || items.has(c) || bathSet.has(c) || sunAt.has(c) || blocked.has(c) || tunnelAt.has(c) || d0[c] < 4) continue;
@@ -740,7 +764,7 @@
     }
 
     // Gato gordinho: a partir da fase 4, longe do começo
-    const nCat = n >= 4 ? (n >= 10 ? 2 : 1) : 0;
+    const nCat = n >= INTRO.cat ? (n >= DOUBLE.cat ? 2 : 1) : 0;
     const cats = [];
     for (const c of shuffle(cells.slice())) {
       if (cats.length >= nCat) break;
@@ -752,10 +776,10 @@
       n, m, W, H, g: m.g, start: { x: 1, y: 1 },
       goal: { x: goalIdx % W, y: (goalIdx / W) | 0 },
       items, baths, idx, theme, popTotal: pc, paoTotal: paoIdx.length, suns, sunAt, cats, blocked, tunnels, tunnelAt,
-      goalMoves: n >= 8, bowlTimer: CFG.bowlEvery[0] + Math.random() * (CFG.bowlEvery[1] - CFG.bowlEvery[0]), bowlWarn: 0, bowlPop: 0,
-      cold: { on: false, t: 0, timer: n >= 20 ? 10 + Math.random() * 8 : Infinity },
-      darkState: { on: false, timer: n >= 15 && n % 2 === 1 ? 6 + Math.random() * 4 : Infinity },
-      bird: { state: null, timer: n >= 12 ? 12 + Math.random() * 6 : Infinity },
+      goalMoves: n >= INTRO.bowlMoves, bowlTimer: CFG.bowlEvery[0] + Math.random() * (CFG.bowlEvery[1] - CFG.bowlEvery[0]), bowlWarn: 0, bowlPop: 0,
+      cold: { on: false, t: 0, timer: n >= INTRO.cold ? 10 + Math.random() * 8 : Infinity },
+      darkState: { on: false, timer: n >= INTRO.dark && n % 2 === 1 ? 6 + Math.random() * 4 : Infinity },
+      bird: { state: null, timer: n >= INTRO.bird ? 12 + Math.random() * 6 : Infinity },
     };
   }
 
@@ -2487,13 +2511,38 @@
     floaters.length = 0;
     S.levelTime = 0;
     layout();
+    updateHud();
+    const nov = NOVIDADES[S.level];
+    if (nov) showNovidade(nov);
+    else beginPlay();
+  }
+
+  /** Começa a fase de fato (depois do cartão de novidade, quando houver). */
+  function beginPlay() {
+    hideAll();
     S.mode = 'play';
+    last = performance.now();
     let sub = '';
     if (S.level === 1) sub = 'Leve o Krug até a tigela de papá';
     else if ((S.level - 1) % 5 === 0) sub = 'Agora ' + L.theme.place;
     banner('Fase ' + S.level, sub, sub ? 2.2 : 1.6);
     Snd.bark(0.1);
-    updateHud();
+  }
+
+  function showNovidade(nov) {
+    S.mode = 'intro';
+    $('#new-level').textContent = S.level;
+    $('#new-title').textContent = nov.title;
+    $('#new-text').textContent = nov.text;
+    const box = $('#new-icons');
+    box.innerHTML = '';
+    for (const type of nov.icons) {
+      const c = document.createElement('canvas');
+      box.appendChild(c);
+      drawIconOn(c, type, 64);
+    }
+    show('#screen-new');
+    Snd.pao();
   }
 
   function newGame() {
@@ -2583,7 +2632,7 @@
         window.addEventListener('keydown', onKey);
       }, 400);
       let barked = false;
-      let catDone = level < 10;
+      let catDone = level < INTRO.cat;
       let birdStep = 0;
       const step = (now) => {
         if (done) return;
@@ -2596,7 +2645,7 @@
         }
         drawCutscene(g, W, H, r, t, level);
         if (!barked && t > 4.9) { barked = true; Snd.doubleBark(0); }
-        if (level >= 15) {
+        if (level >= INTRO.bird) {
           if (birdStep === 0 && t > BIRD_T[0]) { birdStep = 1; Snd.chirp(); Snd.chirp && setTimeout(() => Snd.chirp(), 350); }
           if (birdStep === 1 && t > BIRD_T[1]) { birdStep = 2; Snd.flap(); Snd.bark(0.3, { rate: 1.3 }); }
           if (birdStep === 2 && t > BIRD_T[2]) { birdStep = 3; Snd.birdMiss(); }
@@ -2849,7 +2898,7 @@
     }
 
     // Krug grande correndo: patinhas, rabinho, orelhas e a tampinha rolando
-    const bird = level >= 15 ? cutBird(W, H, t) : null;
+    const bird = level >= INTRO.bird ? cutBird(W, H, t) : null;
     const ky = floorY - legH - R + Math.abs(Math.sin(t * 16)) * -R * 0.08 - (bird ? bird.lift : 0);
     const run = Math.sin(t * 22);
     g.fillStyle = '#2a1d14';
@@ -2916,7 +2965,7 @@
     }
 
     // Gato gordinho mais à frente no chão (fase 10 em diante): a tigela e o Krug passam atrás dele
-    if (level >= 10) {
+    if (level >= INTRO.cat) {
       const st = cutCat(W, H, t);
       if (st.x < W + st.R * 3) drawCatSide(g, st.x, floorY + R * 0.55, st.R, t, st);
     }
@@ -3380,6 +3429,7 @@
   });
 
   $('#btn-play').addEventListener('click', () => { Snd.init(); newGame(); });
+  $('#btn-new-go').addEventListener('click', () => { Snd.init(); if (S.mode === 'intro') beginPlay(); });
   // No celular: 5 toques rápidos no número da fase também pulam 5 fases
   let levelTaps = [];
   document.querySelector('.hud-left').addEventListener('pointerdown', () => {
@@ -3424,12 +3474,23 @@
   // Início
   // ---------------------------------------------------------------------------
   function drawIcons() {
-    document.querySelectorAll('canvas[data-icon]').forEach((c) => {
-      const s = 40, r = 2;
+    document.querySelectorAll('canvas[data-icon]').forEach((c) => drawIconOn(c, c.dataset.icon, 40));
+    const tc = $('#title-cap');
+    const size = 120, r = 2;
+    tc.width = size * r; tc.height = size * r;
+    const g = tc.getContext('2d');
+    g.scale(r, r);
+    drawCap(g, size / 2 - 3, size / 2 - 4, size * 0.42, 0, IMG.normal);
+  }
+
+  /** Desenha o ícone de um item num canvas quadrado de s pixels CSS. */
+  function drawIconOn(c, type, s) {
+    {
+      const r = 2;
       c.width = s * r; c.height = s * r;
+      c.style.width = s + 'px'; c.style.height = s + 'px';
       const g = c.getContext('2d');
       g.scale(r, r);
-      const type = c.dataset.icon;
       if (type === 'bowl') drawBowl(g, s / 2, s / 2, s * 0.7, 1.5);
       if (type === 'popoca') drawPopoca(g, s / 2, s / 2, s * 0.95, 0);
       if (type === 'pao') drawPao(g, s / 2, s / 2, s * 1.1, 0);
@@ -3449,13 +3510,7 @@
       if (type === 'ovoPreto') drawEgg(g, s / 2, s / 2, s * 1.1, 0, true);
       if (type === 'cat') drawCat(g, s / 2 + 2, s / 2, s * 0.95, { face: -0.4, mode: 'sit', puff: 0, phase: 2 }, 0);
       if (type === 'sun') { g.fillStyle = '#c99a6b'; g.fillRect(0, 0, s, s); drawSunRect(g, 4, 4, s - 8, s - 8, s * 0.8, 0.5); }
-    });
-    const tc = $('#title-cap');
-    const size = 120, r = 2;
-    tc.width = size * r; tc.height = size * r;
-    const g = tc.getContext('2d');
-    g.scale(r, r);
-    drawCap(g, size / 2 - 3, size / 2 - 4, size * 0.42, 0, IMG.normal);
+    }
   }
 
   function boot() {
@@ -3471,5 +3526,5 @@
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (L) render(); });
 
   // Acesso para testes automatizados
-  window.__krug = { S, K, get L() { return L; }, input, stop, newGame, nextLevel, playCutscene, startDark, skipLevels, buildLevel, CFG, drawCap, IMG, Snd };
+  window.__krug = { S, K, get L() { return L; }, input, stop, newGame, nextLevel, playCutscene, startDark, skipLevels, INTRO, beginPlay, buildLevel, CFG, drawCap, IMG, Snd };
 })();
