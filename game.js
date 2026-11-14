@@ -34,6 +34,9 @@
     coldTime: 15,        // segundos de frio
     coldSlow: 0.55,      // velocidade do Krug no frio, sem roupinha
     lives: 3,
+    lifeFirst: 4000,     // pontos para a primeira patinha extra
+    lifeStep: 2000,      // cada meta seguinte fica 2 mil pontos mais longe (4 mil, 10 mil, 18 mil, 28 mil...)
+    robotSpeed: 0.8,     // casas por segundo do robô-aspirador (fase 35 em diante)
     braveTime: 7,        // segundos de coragem depois do pão do queijo
     scaredTime: 1.1,     // segundos tremendo depois do má banho
     invulnTime: 2,       // segundos piscando depois de voltar ao começo
@@ -214,6 +217,16 @@
     },
     bowl() { [523, 659, 784, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.16, 'triangle', 0.15, null, i * 0.1)); this.doubleBark(0.65); },
     bump() { this.tone(130, 0.07, 'square', 0.05, 90); },
+    /** Robô-aspirador no caminho: "bi-bip" eletrônico. */
+    robot() {
+      this.tone(1320, 0.07, 'square', 0.05, null, 0);
+      this.tone(990, 0.1, 'square', 0.05, null, 0.11);
+    },
+    /** Patinha extra: arpejo subindo e um latido feliz. */
+    lifeUp() {
+      [587, 740, 880, 1175].forEach((f, i) => this.tone(f, 0.14, 'triangle', 0.14, null, i * 0.08));
+      this.bark(0.35);
+    },
     /**
      * Musiquinha original do intervalo: melodia em onda quadrada, baixo em onda
      * triangular e percussão de ruído, 4 compassos a 168 bpm. Retorna { stop }.
@@ -564,7 +577,7 @@
    */
   const INTRO = {
     coberta: 3, sun: 5, movingBath: 7, cat: 9, tunnel: 12,
-    bowlMoves: 15, eggs: 18, bird: 21, dark: 25, cold: 30,
+    bowlMoves: 15, eggs: 18, bird: 21, dark: 25, cold: 30, robot: 35,
   };
   const DOUBLE = { coberta: 10, cat: 16, tunnel: 19 };
 
@@ -580,6 +593,7 @@
     [INTRO.bird]: { icons: ['bird'], title: 'Passarinho', text: 'Se pegar o Krug andando, leva para outro canto do labirinto. Quando ele estiver rondando, pare o Krug para despistar.' },
     [INTRO.dark]: { icons: ['dark'], title: 'Apagão', text: 'Nas fases ímpares, às vezes a luz apaga em parte do labirinto. Só dá para ver pertinho do Krug até ela voltar.' },
     [INTRO.cold]: { icons: ['roupa'], title: 'Frio e roupinha', text: 'Às vezes esfria e o Krug fica lento. Vista a roupinha para ele andar normal até o fim da fase.' },
+    [INTRO.robot]: { icons: ['robot'], title: 'Robô-aspirador', text: 'Ele passeia devagar pelos corredores e não deixa o Krug passar. Não machuca: é só esperar ele ir embora ou procurar outro caminho.' },
   };
 
   /** Monta uma fase: labirinto, tigela, petiscos e banhos. */
@@ -772,8 +786,18 @@
       cats.push(makeCat(c % W, (c / W) | 0));
     }
 
+    // Robô-aspirador: a partir da fase 35, longe do começo, em corredor livre
+    const nRobot = n >= INTRO.robot ? Math.min(1 + Math.floor((n - INTRO.robot) / 4), 3) : 0;
+    const robots = [];
+    for (const c of shuffle(cells.slice())) {
+      if (robots.length >= nRobot) break;
+      if (d0[c] < 8 || c === goalIdx || tunnelAt.has(c) || bathSet.has(c)) continue;
+      if (robots.some((r) => Math.abs(r.cx - c % W) + Math.abs(r.cy - ((c / W) | 0)) < 6)) continue;
+      robots.push(makeRobot(c % W, (c / W) | 0));
+    }
+
     return {
-      n, m, W, H, g: m.g, start: { x: 1, y: 1 },
+      n, m, W, H, g: m.g, start: { x: 1, y: 1 }, robots,
       goal: { x: goalIdx % W, y: (goalIdx / W) | 0 },
       items, baths, idx, theme, popTotal: pc, paoTotal: paoIdx.length, suns, sunAt, cats, blocked, tunnels, tunnelAt,
       goalMoves: n >= INTRO.bowlMoves, bowlTimer: CFG.bowlEvery[0] + Math.random() * (CFG.bowlEvery[1] - CFG.bowlEvery[0]), bowlWarn: 0, bowlPop: 0,
@@ -796,6 +820,7 @@
     time: 0,
     levelTime: 0,
     stars: 0,
+    lifeK: 1,               // índice da próxima meta de pontos que dá uma patinha
     banner: null,
   };
   let L = null;             // fase atual
@@ -803,7 +828,7 @@
     cx: 1, cy: 1, x: 1, y: 1, dir: null, prog: 0, moving: false, queue: null, queueT: 0,
     napT: 0, napDir: null, sunZone: null, zzz: 0,
     barkT: 0, barkEvery: 0, barkCat: null, catCooldown: 0, barkShake: 0, hopT: 0, sick: false,
-    tunnelT: 0, tunnel: null, tunnelLock: null, carried: false, dressed: false, brrr: 0,
+    tunnelT: 0, tunnel: null, tunnelLock: null, carried: false, dressed: false, brrr: 0, wait: null, robotBeep: 0,
     angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0, bumpDir: [0, 0], shield: false, shieldPop: 0,
   };
   const particles = [];
@@ -1328,6 +1353,52 @@
   }
 
   /** Gato gordinho azul, visto de cima. */
+  /** Robô-aspirador visto de cima: redondo, vermelho, com para-choque e escovinhas. */
+  function drawRobot(g, x, y, s, r, t) {
+    const R = s * 0.4;
+    const busy = !!r.dir || r.spin > 0;
+    g.save();
+    g.translate(x, y);
+    g.fillStyle = 'rgba(0,0,0,.25)';
+    g.beginPath(); g.ellipse(s * 0.04, s * 0.07, R * 1.04, R * 0.98, 0, 0, Math.PI * 2); g.fill();
+    g.rotate(r.face);
+    // Escovinhas laterais girando na frente
+    g.strokeStyle = 'rgba(60,60,60,.75)';
+    g.lineWidth = Math.max(1, R * 0.07);
+    g.lineCap = 'round';
+    for (const sg of [1, -1]) {
+      const bx = R * 0.62, by = sg * R * 0.62;
+      for (let k = 0; k < 3; k++) {
+        const a = (busy ? r.brush * sg : 0) + k * (Math.PI * 2 / 3);
+        g.beginPath(); g.moveTo(bx, by); g.lineTo(bx + Math.cos(a) * R * 0.42, by + Math.sin(a) * R * 0.42); g.stroke();
+      }
+    }
+    // Corpo
+    const body = g.createRadialGradient(-R * 0.3, -R * 0.35, R * 0.1, 0, 0, R);
+    body.addColorStop(0, '#ff6a5c');
+    body.addColorStop(0.7, '#d9282a');
+    body.addColorStop(1, '#9c1418');
+    g.fillStyle = body;
+    g.beginPath(); g.arc(0, 0, R, 0, Math.PI * 2); g.fill();
+    // Para-choque na frente
+    g.strokeStyle = '#3a3a3f';
+    g.lineWidth = R * 0.16;
+    g.beginPath(); g.arc(0, 0, R * 0.9, -1.2, 1.2); g.stroke();
+    // Anel do meio e torre do sensor
+    g.strokeStyle = 'rgba(0,0,0,.22)';
+    g.lineWidth = Math.max(1, R * 0.05);
+    g.beginPath(); g.arc(0, 0, R * 0.62, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = '#2b2b31';
+    g.beginPath(); g.arc(-R * 0.08, 0, R * 0.3, 0, Math.PI * 2); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.18)';
+    g.beginPath(); g.arc(-R * 0.15, -R * 0.08, R * 0.12, 0, Math.PI * 2); g.fill();
+    // Luzinha: verde andando, piscando laranja quando para
+    const on = busy ? true : Math.floor(t * 3) % 2 === 0;
+    g.fillStyle = busy ? '#6dfc8c' : on ? '#ffb347' : '#7a4d1f';
+    g.beginPath(); g.arc(R * 0.42, 0, R * 0.09, 0, Math.PI * 2); g.fill();
+    g.restore();
+  }
+
   function drawCat(g, x, y, s, c, t) {
     const R = s * 0.4;
     const puff = c.puff || 0;
@@ -1718,6 +1789,7 @@
     if (K.carried) return;
     if (K.tunnelT > 0) { K.stopReq = true; return; } // para logo na saída do túnel
     K.queue = null;
+    K.wait = null;
     if (K.moving) K.stopReq = true;
     if (K.napT > 0) K.napDir = null;
   }
@@ -1728,6 +1800,7 @@
     K.stopReq = false;
     const d = DIRS[name];
     if (!d || K.scaredT > 0) return;
+    K.wait = null;
     if (K.carried) return; // pendurado no passarinho
     if (K.tunnelT > 0) { K.queue = d; K.queueT = CFG.queueTime + K.tunnelT; return; } // vale na saída
     if (K.barkT > 0) return; // latindo para o gato, esqueceu de tudo
@@ -1745,7 +1818,7 @@
       K.queue = null;
     } else if (same(d, K.dir)) {
       K.queue = null;
-    } else if (K.prog <= CFG.lateTurn && isOpen(K.cx, K.cy, d)) {
+    } else if (K.prog <= CFG.lateTurn && isOpen(K.cx, K.cy, d) && !robotAt(K.cx + d[0], K.cy + d[1])) {
       // Tocou um pouco tarde: volta o pedacinho e vira no cruzamento que acabou de passar
       K.prog = 0;
       K.dir = d;
@@ -1861,6 +1934,7 @@
     K.tunnelT = CFG.tunnelTime;
     K.moving = false;
     K.queue = null;
+    K.wait = null;
     K.stopReq = false;
     T.shake = 0.6;
     burst(from.x + 0.5, from.y + 0.5, '#e8d6b4', 8, 2, 0.07);
@@ -2064,6 +2138,7 @@
           if (x === L.goal.x && y === L.goal.y) continue;
           if (dK[i] >= 0 && (dK[i] < minD || dK[i] > maxD)) continue;
           if (L.baths.some((b) => !b.gone && Math.abs(b.x - x) + Math.abs(b.y - y) < 3)) continue;
+          if (L.robots.some((r) => Math.abs(r.x - x) + Math.abs(r.y - y) < 3)) continue;
           ok.push(i);
         }
       }
@@ -2093,7 +2168,7 @@
   function birdDrop(B) {
     K.carried = false;
     K.cx = B.dx; K.cy = B.dy; K.x = B.dx; K.y = B.dy;
-    K.prog = 0; K.dir = null; K.moving = false;
+    K.prog = 0; K.dir = null; K.moving = false; K.wait = null;
     K.invulnT = 1.5;
     K.tunnelLock = null;
     K.sunZone = L.sunAt.get(L.idx(K.cx, K.cy)) ?? null;
@@ -2188,6 +2263,7 @@
         if (x === L.goal.x && y === L.goal.y) continue;
         if (dK[i] >= 0 && dK[i] < 8) continue;
         if (L.baths.some((b) => !b.moving && b.x === x && b.y === y)) continue;
+        if (robotAt(x, y)) continue;
         ok.push(i);
       }
     }
@@ -2242,9 +2318,17 @@
       if (K.napT <= 0) wake();
       if (K.napT > 0) { K.x = K.cx; K.y = K.cy; return; }
     }
+    if (K.robotBeep > 0) K.robotBeep -= dt;
+    if (!K.moving && K.wait && K.barkT <= 0) {
+      // Esperando o robô: segue sozinho assim que a passagem abre
+      const w = K.wait;
+      if (!isOpen(K.cx, K.cy, w)) K.wait = null;
+      else if (!robotAt(K.cx + w[0], K.cy + w[1])) { K.wait = null; K.dir = w; K.moving = true; K.prog = 0; }
+    }
     const chilly = L.cold.on && !K.dressed;
     let dist = CFG.speed * dt * (chilly ? CFG.coldSlow : 1);
     while (dist > 0 && K.moving) {
+      if (K.prog === 0 && L.robots.length && robotAt(K.cx + K.dir[0], K.cy + K.dir[1])) { blockedByRobot(K.dir); break; }
       const d = Math.min(dist, 1 - K.prog);
       K.prog += d;
       dist -= d;
@@ -2466,6 +2550,95 @@
     for (const c of L.cats) if (catSees(c)) { startBark(c); break; }
   }
 
+  // ---------------------------------------------------------------------------
+  // Robô-aspirador: passeia devagar e fecha a passagem (não machuca)
+  // ---------------------------------------------------------------------------
+  function makeRobot(x, y) {
+    return { cx: x, cy: y, x, y, dir: null, prog: 0, wait: 0.5 + Math.random(), spin: 0, face: Math.random() * Math.PI * 2, brush: 0 };
+  }
+
+  /** O robô ocupa a casa em que está e, andando, a casa para onde vai. */
+  function robotAt(x, y, except = null) {
+    for (const r of L.robots) {
+      if (r === except) continue;
+      if (r.cx === x && r.cy === y) return r;
+      if (r.dir && r.cx + r.dir[0] === x && r.cy + r.dir[1] === y) return r;
+    }
+    return null;
+  }
+
+  /** Casas em que o robô não entra: as do Krug, a tigela, o começo, túneis e banhos parados. */
+  function robotCanEnter(r, x, y) {
+    if (L.g[y][x] !== 0) return false;
+    if (x === K.cx && y === K.cy) return false;
+    if (K.moving && K.dir && x === K.cx + K.dir[0] && y === K.cy + K.dir[1]) return false;
+    if (x === L.goal.x && y === L.goal.y) return false;
+    if (x === L.start.x && y === L.start.y) return false;
+    const i = L.idx(x, y);
+    if (L.tunnelAt.has(i)) return false;
+    if (L.baths.some((b) => !b.moving && !b.gone && b.x === x && b.y === y)) return false;
+    return !robotAt(x, y, r);
+  }
+
+  function robotChooseDir(r) {
+    const free = D4.filter((d) => robotCanEnter(r, r.cx + d[0], r.cy + d[1]));
+    if (!free.length) return null;
+    // Como robô de verdade: segue reto enquanto dá e vira quando encontra obstáculo
+    if (r.dir && free.some((d) => same(d, r.dir)) && Math.random() < 0.75) return r.dir;
+    const fwd = free.filter((d) => !r.dir || !opposite(d, r.dir));
+    const opts = fwd.length ? fwd : free;
+    return opts[(Math.random() * opts.length) | 0];
+  }
+
+  function stepRobots(dt) {
+    for (const r of L.robots) {
+      r.brush += dt * 14;
+      if (!r.dir) {
+        r.wait -= dt;
+        r.spin = Math.max(0, r.spin - dt);
+        if (r.spin > 0) r.face += dt * 2.2; // gira no lugar, procurando caminho
+        if (r.wait <= 0) {
+          r.dir = robotChooseDir(r);
+          r.prog = 0;
+          if (!r.dir) { r.wait = 0.5; r.spin = 0.5; }
+        }
+      } else {
+        // Vira devagar antes de andar
+        const want = Math.atan2(r.dir[1], r.dir[0]);
+        r.face = lerpAngle(r.face, want, Math.min(1, dt * 5));
+        let dd = want - r.face;
+        while (dd > Math.PI) dd -= Math.PI * 2;
+        while (dd < -Math.PI) dd += Math.PI * 2;
+        if (Math.abs(dd) < 0.35) r.prog += CFG.robotSpeed * dt;
+        if (r.prog >= 1) {
+          r.cx += r.dir[0]; r.cy += r.dir[1]; r.prog = 0;
+          const isCell = r.cx % 2 === 1 && r.cy % 2 === 1;
+          if (isCell && Math.random() < 0.12) { r.dir = null; r.wait = 1 + Math.random() * 1.5; r.spin = r.wait * 0.6; }
+          else {
+            const nd = robotChooseDir(r);
+            if (nd) r.dir = nd;
+            else { r.dir = null; r.wait = 0.5; r.spin = 0.5; }
+          }
+        }
+      }
+      r.x = r.cx + (r.dir ? r.dir[0] * r.prog : 0);
+      r.y = r.cy + (r.dir ? r.dir[1] * r.prog : 0);
+    }
+  }
+
+  let robotHintShown = false;
+  /** O Krug deu de cara com o robô: para e espera para seguir na mesma direção. */
+  function blockedByRobot(d) {
+    K.moving = false;
+    K.prog = 0;
+    K.wait = d;
+    K.queue = null;
+    K.bumpT = 0.18;
+    K.bumpDir = d;
+    if (K.robotBeep <= 0) { Snd.robot(); K.robotBeep = 1.2; }
+    if (!robotHintShown) { robotHintShown = true; banner('Robô-aspirador!', 'Espere ele passar ou vá por outro caminho'); }
+  }
+
   function hit(b) {
     if (K.barkT > 0) endBark();
     K.saved = false;
@@ -2490,7 +2663,7 @@
     if (K.sick) { K.sick = false; if (S.lives <= 0) gameOver(); return; }
     if (S.lives <= 0) { gameOver(); return; }
     K.cx = L.start.x; K.cy = L.start.y; K.x = K.cx; K.y = K.cy;
-    K.prog = 0; K.dir = null;
+    K.prog = 0; K.dir = null; K.wait = null;
     K.sunZone = null;
     K.invulnT = CFG.invulnTime;
   }
@@ -2505,7 +2678,7 @@
       queue: null, angle: 0, scaredT: 0, braveT: 0, invulnT: 0, happyT: 0, bumpT: 0, saved: false, stopReq: false,
       napT: 0, napDir: null, sunZone: null, zzz: 0,
       barkT: 0, barkEvery: 0, barkCat: null, catCooldown: 0, barkShake: 0, hopT: 0, sick: false,
-      tunnelT: 0, tunnel: null, tunnelLock: null, carried: false, dressed: false, brrr: 0,
+      tunnelT: 0, tunnel: null, tunnelLock: null, carried: false, dressed: false, brrr: 0, wait: null, robotBeep: 0,
     });
     particles.length = 0;
     floaters.length = 0;
@@ -2545,9 +2718,38 @@
     Snd.pao();
   }
 
+  /** Pontos necessários para a k-ésima patinha extra: 4 mil, 10 mil, 18 mil, 28 mil, 40 mil... */
+  function lifeGoal(k) {
+    return k * CFG.lifeFirst + (CFG.lifeStep * k * (k - 1)) / 2;
+  }
+
+  /**
+   * Confere se a pontuação passou da próxima meta. Se o Krug já tem todas as
+   * patinhas, a meta passa para a seguinte sem dar nada. Retorna quantas ganhou.
+   */
+  function checkLife(quiet) {
+    let got = 0;
+    while (S.score >= lifeGoal(S.lifeK)) {
+      S.lifeK++;
+      if (S.lives < CFG.lives) { S.lives++; got++; }
+    }
+    if (got) {
+      updateHud();
+      Snd.lifeUp();
+      if (!quiet) {
+        banner('Uma patinha de volta!', 'Próxima aos ' + fmtPts(lifeGoal(S.lifeK)) + ' pontos');
+        burst(K.x + 0.5, K.y + 0.5, '#ffd27a', 18, 3.5, 0.09);
+      }
+    }
+    return got;
+  }
+
+  const fmtPts = (v) => v.toLocaleString('pt-BR');
+
   function newGame() {
     S.level = 1;
     S.score = 0;
+    S.lifeK = 1;
     S.lives = CFG.lives;
     S.stars = 0;
     S.lastHurt = null;
@@ -2573,12 +2775,12 @@
     const starBonus = (nStars - 1) * CFG.pts.star;
     S.score += starBonus;
     S.stars += nStars;
-    let extra = '';
-    if (S.level % 3 === 0 && S.lives < CFG.lives) { S.lives++; extra = ' e uma patinha de volta'; }
+    const extra = checkLife(true) ? ' e uma patinha de volta' : '';
     updateHud();
     saveBest();
     $('#level-text').textContent = `Fase ${S.level} concluída. O Krug chegou à tigela de papá!`;
     $('#level-bonus').textContent = `+${bonus + starBonus} pontos${extra}`;
+    $('#level-life').textContent = `Próxima patinha aos ${fmtPts(lifeGoal(S.lifeK))} pontos`;
     const labels = [
       'Chegou à tigela de papá',
       popLeft === 0 ? 'Comeu todas as popocas' : `Comeu todas as popocas (${popLeft === 1 ? 'faltou 1' : `faltaram ${popLeft}`})`,
@@ -3094,6 +3296,8 @@
       stepKrug(dt);
       stepBaths(dt);
       stepCats(dt);
+      if (L.robots.length) stepRobots(dt);
+      checkLife(false);
       if (L.goalMoves) stepBowl(dt);
       stepDark(dt);
       stepBird(dt);
@@ -3185,6 +3389,7 @@
       if (c.mode !== 'flee') drawCatSight(ctx, c, TS);
     }
     for (const c of L.cats) drawCat(ctx, P(c.x), P(c.y), TS, c, t);
+    for (const r of L.robots) if (inView(r.x, r.y)) drawRobot(ctx, P(r.x), P(r.y), TS, r, t);
 
     // Krug
     let face = IMG.normal;
@@ -3231,6 +3436,13 @@
         const px = -Math.sin(c.face) * TS * 0.08, py = Math.cos(c.face) * TS * 0.08;
         ctx.fillStyle = `rgba(242,209,75,${da})`;
         for (const sg of [1, -1]) { ctx.beginPath(); ctx.arc(ex + px * sg, ey + py * sg, TS * 0.05, 0, Math.PI * 2); ctx.fill(); }
+      }
+      // Luzinha do robô continua acesa no escuro
+      for (const r of L.robots) {
+        const da = darkAt(Math.round(r.x), Math.round(r.y));
+        if (da < 0.5) continue;
+        ctx.fillStyle = r.dir ? `rgba(109,252,140,${da})` : `rgba(255,179,71,${da})`;
+        ctx.beginPath(); ctx.arc(P(r.x) + Math.cos(r.face) * TS * 0.17, P(r.y) + Math.sin(r.face) * TS * 0.17, TS * 0.05, 0, Math.PI * 2); ctx.fill();
       }
     }
 
@@ -3338,7 +3550,7 @@
     if (S.mode === 'cutscene') return;
     const fresh = S.mode === 'start' || S.mode === 'over';
     if (fresh) {
-      S.score = 0; S.lives = CFG.lives; S.stars = 0; S.lastHurt = null;
+      S.score = 0; S.lifeK = 1; S.lives = CFG.lives; S.stars = 0; S.lastHurt = null;
       S.bestAtStart = S.best; K.shield = false;
     }
     const target = (fresh ? 1 : S.level) + n;
@@ -3509,6 +3721,7 @@
       if (type === 'ovoBranco') drawEgg(g, s / 2, s / 2, s * 1.1, 0, false);
       if (type === 'ovoPreto') drawEgg(g, s / 2, s / 2, s * 1.1, 0, true);
       if (type === 'cat') drawCat(g, s / 2 + 2, s / 2, s * 0.95, { face: -0.4, mode: 'sit', puff: 0, phase: 2 }, 0);
+      if (type === 'robot') drawRobot(g, s / 2, s / 2, s * 1.1, { face: -Math.PI / 2, dir: [0, -1], spin: 0, brush: 0.4 }, 0);
       if (type === 'sun') { g.fillStyle = '#c99a6b'; g.fillRect(0, 0, s, s); drawSunRect(g, 4, 4, s - 8, s - 8, s * 0.8, 0.5); }
     }
   }

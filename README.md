@@ -24,6 +24,7 @@ Jogo web de labirinto visto de cima. O jogador conduz a tampinha de refrigerante
 | Passarinho | A partir da fase 21, aparece a cada 18 a 28 s, ronda o Krug piando por cerca de 2 s (com uma sombra embaixo dele) e mergulha. Se o Krug estiver andando, é levado pelo ar e solto em outro ponto seguro do labirinto. Se estiver parado (ou dentro de um túnel), despista o passarinho, que vai embora |
 | Apagão | Nas fases ímpares a partir da 25, a cada 20 a 30 s a luz apaga a partir de um ponto aleatório e a escuridão escorre pelos corredores, acompanhando as paredes, até cobrir cerca de 40% do labirinto; 9 s depois a luz volta pelo mesmo caminho. Toca um som de terror engraçado. A borda da escuridão é esfumada, só uma luzinha em volta do Krug continua acesa, e os olhos do gato brilham no escuro |
 | Frio e roupinha | A partir da fase 30, às vezes esfria (primeira vez 10 a 18 s após o início, depois a cada 25 a 40 s, por 15 s): neva, as bordas da tela ficam geladas e o Krug, sem roupinha, treme e anda a 55% da velocidade. A roupinha (1 por fase) devolve a velocidade normal até o fim da fase; ao mudar de fase, o Krug perde a roupinha |
+| Robô-aspirador | A partir da fase 35 (um; dois na 39; três na 43): redondo e vermelho, passeia devagar pelos corredores (0,8 casa por segundo), segue reto enquanto pode e às vezes para girando. Não tira patinha, mas o Krug não passa por ele: para e espera, e segue sozinho na mesma direção quando a passagem abre. O robô nunca entra na casa do Krug, na tigela, no começo da fase, em túnel ou em banho parado |
 | Má banho | O Krug perde uma patinha e volta ao começo da fase |
 
 ### Atalho de teste
@@ -44,11 +45,11 @@ A cada 5 fases completas, ao tocar em "Próxima fase", aparece uma animação do
 
 ### Ritmo das novidades
 
-Uma novidade a cada 3 fases, com uma fase de respiro entre elas: cobertinha (3), raio de sol (5), banho que anda (7), gato (9), túnel (12), tigela que foge (15), ovos de páscoa (18), passarinho (21), apagão (25, nas fases ímpares) e frio com roupinha (30). As versões em dobro vêm depois: duas cobertinhas a partir da 10, dois gatos a partir da 16 e dois pares de túneis a partir da 19. O labirinto e a quantidade de banhos crescem devagar, e o labirinto chega ao tamanho máximo por volta da fase 15. Na fase em que algo aparece pela primeira vez, um cartão de novidade explica o item antes de começar.
+Uma novidade a cada 3 fases, com uma fase de respiro entre elas: cobertinha (3), raio de sol (5), banho que anda (7), gato (9), túnel (12), tigela que foge (15), ovos de páscoa (18), passarinho (21), apagão (25, nas fases ímpares), frio com roupinha (30) e robô-aspirador (35). As versões em dobro vêm depois: duas cobertinhas a partir da 10, dois gatos a partir da 16 e dois pares de túneis a partir da 19. O labirinto e a quantidade de banhos crescem devagar, e o labirinto chega ao tamanho máximo por volta da fase 15. Na fase em que algo aparece pela primeira vez, um cartão de novidade explica o item antes de começar.
 
 ### Patinhas
 
-O Krug tem 3 patinhas. A cada 3 fases concluídas, ele recupera uma (até o máximo de 3). A partir da fase 7, aparecem banhos que andam pelos corredores.
+O Krug tem 3 patinhas e recupera uma quando a pontuação passa de certas metas: 4 mil, 10 mil, 18 mil, 28 mil, 40 mil pontos, e assim por diante (cada intervalo fica 2 mil pontos maior que o anterior). Se ele já estiver com as 3, a meta passa para a seguinte sem dar nada. Na prática, isso dá uma patinha a cada 4 ou 5 fases. A tela de fim de fase mostra a próxima meta. A partir da fase 7, aparecem banhos que andam pelos corredores.
 
 As fases são geradas na hora e ficam maiores a cada nível. O gerador garante que sempre existe um caminho até a tigela (e até cada pão do queijo) sem passar por um banho parado. Quando o labirinto não cabe na tela, a câmera acompanha o Krug e uma seta na borda aponta para a tigela.
 
