@@ -90,3 +90,7 @@ As músicas são originais e sintetizadas na hora com Web Audio, sem arquivos de
 
 As músicas dos cômodos têm duas partes (de 30 a 38 segundos no total) e se repetem durante a fase. Enquanto o Krug está corajoso, a música do cômodo fica em silêncio e volta depois, do ponto em que estava. Na pausa, na fase concluída, nos intervalos e no fim de jogo, a música para. A chave "Música" no menu de pausa (ou a tecla M no computador) liga e desliga só a música; o botão de som desliga tudo. A escolha fica salva no aparelho.
 
+## Desempenho em aparelhos fracos
+
+Pensando em navegadores de TV, o jogo evita operações pesadas a cada quadro: a escuridão do apagão é montada numa tela pequena e ampliada (sem filtro de desfoque), os itens e banhos são desenhados uma vez como figurinhas e depois só copiados, a neve sai num único preenchimento e a barra superior só é atualizada quando algo muda. Além disso, a resolução de desenho se ajusta sozinha: se os quadros ficarem lentos (abaixo de uns 38 por segundo), o jogo passa a desenhar menos pixels (80%, 65% e por fim 50%) e deixa o navegador ampliar a imagem. Em TVs, já começa em 80%. Se sobrar folga por alguns segundos, ele tenta voltar um degrau. A escolha fica salva no aparelho (`krug.scale`).
+

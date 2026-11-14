@@ -841,8 +841,47 @@
   const cam = { x: 0, y: 0 };
   let staticLayer = null;
 
+  /**
+   * Resolução de desenho. Em aparelhos fracos (navegador de TV, por exemplo) o
+   * jogo desenha menos pixels e deixa o navegador ampliar a imagem: fica um
+   * pouco mais suave, mas bem mais leve. Começa reduzida em TVs e se ajusta
+   * sozinha se os quadros ficarem lentos; a escolha fica salva no aparelho.
+   */
+  const IS_TV = /Web0S|webOS|SmartTV|SMART-TV|NetCast|Tizen|HbbTV|BRAVIA|CrKey|AFT[A-Z]/i.test(navigator.userAgent);
+  const SCALES = [1, 0.8, 0.65, 0.5];
+  let renderScale = store.get('scale', IS_TV ? 0.8 : 1);
+  if (!SCALES.includes(renderScale)) renderScale = 1;
+  const perf = { n: 0, sum: 0, skip: 30, good: 0, upLocked: false };
+  function setScale(v) {
+    renderScale = v;
+    store.set('scale', v);
+    perf.skip = 60;
+    perf.good = 0;
+    layout();
+  }
+  function watchFrame(realDt) {
+    if (S.mode !== 'play' || document.hidden) { perf.n = 0; perf.sum = 0; perf.skip = 30; return; }
+    if (perf.skip > 0) { perf.skip--; return; } // ignora o começo da fase e a troca de resolução
+    perf.n++;
+    perf.sum += Math.min(realDt, 0.25);
+    if (perf.n < 120 && perf.sum < 2) return; // janela de 120 quadros ou 2 segundos
+    const avg = perf.sum / perf.n;
+    perf.n = 0; perf.sum = 0;
+    const i = SCALES.indexOf(renderScale);
+    if (avg > 0.026 && i < SCALES.length - 1) {
+      // Abaixo de uns 38 quadros por segundo: desenha menos pixels
+      if (perf.raised) perf.upLocked = true; // subiu e voltou a pesar: não tenta subir de novo
+      setScale(SCALES[i + 1]);
+    } else if (avg < 0.0175 && i > 0 && !perf.upLocked) {
+      // Folga de sobra por uns 6 segundos seguidos: tenta voltar um degrau
+      if (++perf.good >= 3) { perf.raised = true; setScale(SCALES[i - 1]); }
+    } else {
+      perf.good = 0;
+    }
+  }
+
   function layout() {
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    dpr = Math.min(window.devicePixelRatio || 1, 2) * renderScale;
     vw = stage.clientWidth;
     vh = stage.clientHeight;
     canvas.width = Math.round(vw * dpr);
@@ -981,7 +1020,52 @@
   ];
   const themeFor = (n) => THEMES[Math.floor((n - 1) / 5) % THEMES.length];
 
+  /**
+   * Figurinhas prontas: cada item é desenhado uma vez numa tela pequena e
+   * depois só copiado a cada quadro, com o balanço aplicado na cópia. Desenhar
+   * gradientes e curvas de dezenas de itens a cada quadro pesa em aparelhos fracos.
+   */
+  const sprites = new Map();
+  function sprite(key, s, draw) {
+    const k = key + '|' + s + '|' + dpr;
+    let c = sprites.get(k);
+    if (!c) {
+      c = document.createElement('canvas');
+      const px = Math.ceil(s * 2 * dpr);
+      c.width = px; c.height = px;
+      const g = c.getContext('2d');
+      g.scale(dpr, dpr);
+      draw(g, s, s);
+      sprites.set(k, c);
+    }
+    return c;
+  }
+  const BATH_FRAMES = 6;
+  function drawItemFast(g, type, x, y, s, t) {
+    let c, dy = 0, sc = 1;
+    if (type === 'popoca') { c = sprite('popoca', s, (h, cx, cy) => drawPopoca(h, cx, cy, s, -cx * 0.1 / 3)); dy = Math.sin(t * 3 + x * 0.1) * s * 0.03; }
+    else if (type === 'pao') { c = sprite('pao', s, (h, cx, cy) => drawPao(h, cx, cy, s, 0)); sc = 1 + Math.sin(t * 4) * 0.035; }
+    else if (type === 'ovoBranco' || type === 'ovoPreto') { c = sprite(type, s, (h, cx, cy) => drawEgg(h, cx, cy, s, -cx * 0.07 / 2.2, type === 'ovoPreto')); dy = Math.sin(t * 2.2 + x * 0.07) * s * 0.025; }
+    else if (type === 'roupa') { c = sprite('roupa', s, (h, cx, cy) => drawRoupa(h, cx, cy, s, -cx * 0.05 / 2.4)); dy = Math.sin(t * 2.4 + x * 0.05) * s * 0.02; }
+    else { c = sprite('coberta', s, (h, cx, cy) => drawCoberta(h, cx, cy, s, -cx * 0.05 / 2.5)); dy = Math.sin(t * 2.5 + x * 0.05) * s * 0.02; }
+    const r = s * sc;
+    g.drawImage(c, x - r, y - r + dy, r * 2, r * 2);
+  }
+  function drawBathFast(g, x, y, s, t, moving) {
+    // A espuma borbulha em 6 quadros prontos; o balanço vai na cópia
+    const ph = ((t * 5) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+    const f = Math.floor((ph / (Math.PI * 2)) * BATH_FRAMES) % BATH_FRAMES;
+    const tf = (f + 0.5) * (Math.PI * 2) / BATH_FRAMES / 5;
+    const c = sprite('bath' + f, s, (h, cx, cy) => {
+      // drawBath já balança com sin(t*3); desconta para o quadro ficar parado
+      h.save(); h.translate(0, -Math.sin(tf * 3) * s * 1.25 * 0.02); drawBath(h, cx, cy, s, tf, false); h.restore();
+    });
+    const wob = Math.sin(t * (moving ? 9 : 3)) * s * 1.25 * 0.02;
+    g.drawImage(c, x - s, y - s + wob, s * 2, s * 2);
+  }
+
   function buildStaticLayer() {
+    sprites.clear();
     const c = document.createElement('canvas');
     c.width = Math.ceil(L.W * TS * dpr);
     c.height = Math.ceil(L.H * TS * dpr);
@@ -1512,21 +1596,22 @@
     if (!any) return;
     tg.putImageData(img, 0, 0);
 
+    // A escuridão é montada numa tela pequena (um quarto do tamanho) e depois
+    // ampliada com suavização: a borda fica esfumada sem o filtro de desfoque,
+    // que é pesado demais em aparelhos fracos, como navegadores de TV.
+    const q = Math.min(0.25, 12 / TS);
+    const sw = Math.max(1, Math.ceil(vw * q)), sh = Math.max(1, Math.ceil(vh * q));
     if (!darkCanvas) darkCanvas = document.createElement('canvas');
-    if (darkCanvas.width !== canvas.width || darkCanvas.height !== canvas.height) {
-      darkCanvas.width = canvas.width;
-      darkCanvas.height = canvas.height;
+    if (darkCanvas.width !== sw || darkCanvas.height !== sh) {
+      darkCanvas.width = sw;
+      darkCanvas.height = sh;
     }
     const g = darkCanvas.getContext('2d');
     const ox = Math.round(cam.x), oy = Math.round(cam.y);
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.setTransform(q, 0, 0, q, 0, 0);
     g.clearRect(0, 0, vw, vh);
     g.imageSmoothingEnabled = true;
-    g.imageSmoothingQuality = 'high';
-    // Desfoque leve para a borda ficar ainda mais suave (navegadores sem suporte ignoram)
-    g.filter = `blur(${Math.max(2, Math.round(TS * 0.35))}px)`;
     g.drawImage(darkTiles, -ox, -oy, L.W * TS, L.H * TS);
-    g.filter = 'none';
     g.globalCompositeOperation = 'destination-out';
     const r = TS * 1.9;
     const grd = g.createRadialGradient(kpx - ox, kpy - oy, TS * 0.6, kpx - ox, kpy - oy, r);
@@ -1537,8 +1622,9 @@
     g.beginPath(); g.arc(kpx - ox, kpy - oy, r, 0, Math.PI * 2); g.fill();
     g.globalCompositeOperation = 'source-over';
     ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(darkCanvas, 0, 0);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(darkCanvas, 0, 0, sw / q, sh / q);
     ctx.restore();
   }
 
@@ -2221,32 +2307,48 @@
   }
 
   /** Neve caindo e geada nas bordas da tela. */
+  let frostCanvas = null;
   function drawCold(dt) {
     const a = coldAlpha();
     if (a <= 0 && !snow.length) return;
     if (a > 0) {
-      const want = Math.round((vw * vh) / 6000 * a);
+      const want = Math.round(Math.min(160, (vw * vh) / 6000) * a);
       while (snow.length < want) snow.push({ x: Math.random() * vw, y: -10 - Math.random() * vh * 0.3, r: 1.5 + Math.random() * 2.5, vy: 30 + Math.random() * 50, ph: Math.random() * 6 });
     }
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const vg = ctx.createRadialGradient(vw / 2, vh / 2, Math.min(vw, vh) * 0.35, vw / 2, vh / 2, Math.max(vw, vh) * 0.75);
-    vg.addColorStop(0, 'rgba(200,230,255,0)');
-    vg.addColorStop(1, `rgba(215,238,255,${0.6 * a})`);
-    ctx.fillStyle = `rgba(170,210,255,${0.12 * a})`; // tudo um pouco mais azulado
-    ctx.fillRect(0, 0, vw, vh);
-    ctx.fillStyle = vg;
-    ctx.fillRect(0, 0, vw, vh);
+    // Bordas geladas: o degradê é desenhado uma vez numa tela pequena e ampliado
+    if (!frostCanvas || frostCanvas.__w !== vw || frostCanvas.__h !== vh) {
+      frostCanvas = document.createElement('canvas');
+      const fw = 160, fh = Math.max(1, Math.round(160 * vh / vw));
+      frostCanvas.width = fw; frostCanvas.height = fh;
+      frostCanvas.__w = vw; frostCanvas.__h = vh;
+      const fg = frostCanvas.getContext('2d');
+      const vg = fg.createRadialGradient(fw / 2, fh / 2, Math.min(fw, fh) * 0.35, fw / 2, fh / 2, Math.max(fw, fh) * 0.75);
+      vg.addColorStop(0, 'rgba(200,230,255,0)');
+      vg.addColorStop(1, 'rgba(215,238,255,0.6)');
+      fg.fillStyle = 'rgba(170,210,255,0.12)'; // tudo um pouco mais azulado
+      fg.fillRect(0, 0, fw, fh);
+      fg.fillStyle = vg;
+      fg.fillRect(0, 0, fw, fh);
+    }
+    ctx.globalAlpha = a;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(frostCanvas, 0, 0, vw, vh);
+    // Flocos num caminho só: um preenchimento por quadro em vez de um por floco
     ctx.fillStyle = 'rgba(255,255,255,.9)';
+    ctx.globalAlpha = Math.max(0.3, a);
+    ctx.beginPath();
     for (let i = snow.length - 1; i >= 0; i--) {
       const f = snow[i];
       f.y += f.vy * dt;
       f.ph += dt * 2;
       const x = f.x + Math.sin(f.ph) * 8;
       if (f.y > vh + 10) { if (a > 0) { f.y = -10; f.x = Math.random() * vw; } else { snow.splice(i, 1); continue; } }
-      ctx.globalAlpha = Math.max(0.3, a);
-      ctx.beginPath(); ctx.arc(x, f.y, f.r, 0, Math.PI * 2); ctx.fill();
+      ctx.moveTo(x + f.r, f.y);
+      ctx.arc(x, f.y, f.r, 0, Math.PI * 2);
     }
+    ctx.fill();
     ctx.restore();
   }
 
@@ -3312,6 +3414,7 @@
   };
 
   function frame(now) {
+    watchFrame((now - last) / 1000);
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     frameDt = S.mode === 'play' ? dt : 0;
@@ -3321,6 +3424,7 @@
     requestAnimationFrame(frame);
   }
 
+  const liveHud = { brave: null, bar: null, score: null };
   function update(dt) {
     S.time += dt;
     if (!L) return;
@@ -3367,10 +3471,12 @@
     }
     if (S.banner) { S.banner.life += dt; if (S.banner.life > S.banner.max) S.banner = null; }
     updateCamera(dt, false);
-    const c = $('#courage');
-    c.classList.toggle('on', K.braveT > 0);
-    $('#courage-bar').style.width = (K.braveT / CFG.braveTime) * 100 + '%';
-    $('#hud-score').textContent = S.score;
+    // Só mexe na página quando algo muda: cada escrita no HTML custa caro em aparelhos fracos
+    const brave = K.braveT > 0;
+    if (brave !== liveHud.brave) { liveHud.brave = brave; $('#courage').classList.toggle('on', brave); }
+    const bw = Math.round((K.braveT / CFG.braveTime) * 200) / 2;
+    if (bw !== liveHud.bar) { liveHud.bar = bw; $('#courage-bar').style.width = bw + '%'; }
+    if (S.score !== liveHud.score) { liveHud.score = S.score; $('#hud-score').textContent = S.score; }
   }
 
   function render() {
@@ -3404,12 +3510,7 @@
     for (const [i, type] of L.items) {
       const x = i % L.W, y = (i / L.W) | 0;
       if (!inView(x, y)) continue;
-      if (type === 'popoca') drawPopoca(ctx, P(x), P(y), TS, t);
-      else if (type === 'pao') drawPao(ctx, P(x), P(y), TS, t);
-      else if (type === 'ovoBranco') drawEgg(ctx, P(x), P(y), TS, t, false);
-      else if (type === 'roupa') drawRoupa(ctx, P(x), P(y), TS, t);
-      else if (type === 'ovoPreto') drawEgg(ctx, P(x), P(y), TS, t, true);
-      else drawCoberta(ctx, P(x), P(y), TS, t);
+      drawItemFast(ctx, type, P(x), P(y), TS, t);
     }
 
     for (const b of L.baths) {
@@ -3424,7 +3525,7 @@
         continue;
       }
       if (!inView(b.x, b.y)) continue;
-      drawBath(ctx, P(b.x), P(b.y), TS, b.phase, b.moving);
+      drawBathFast(ctx, P(b.x), P(b.y), TS, b.phase, b.moving);
     }
 
     // Gatos e o pedaço de corredor que eles vigiam
@@ -3792,5 +3893,5 @@
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (L) render(); });
 
   // Acesso para testes automatizados
-  window.__krug = { Music, S, K, get L() { return L; }, input, stop, newGame, nextLevel, playCutscene, startDark, skipLevels, INTRO, beginPlay, buildLevel, CFG, drawCap, IMG, Snd };
+  window.__krug = { render, update, Music, S, K, get L() { return L; }, input, stop, newGame, nextLevel, playCutscene, startDark, skipLevels, INTRO, beginPlay, buildLevel, CFG, drawCap, IMG, Snd };
 })();
