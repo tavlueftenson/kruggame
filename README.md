@@ -58,6 +58,7 @@ As fases são geradas na hora e ficam maiores a cada nível. O gerador garante q
 - `index.html`: página e telas (início, fase concluída, fim de jogo, pausa)
 - `style.css`: visual
 - `game.js`: gerador de labirinto, regras, desenho no canvas, sons e controles
+- `music.js`: sequenciador, instrumentos sintetizados e as músicas
 - `assets/`: carinhas do Krug recortadas das fotos, fotos das telas e ícones
 - `assets/sons/`: latidos de verdade do Krug, recortados de uma gravação
 
@@ -73,3 +74,19 @@ python3 -m http.server 8000
 ```
 
 O recorde e a preferência de som ficam salvos no navegador (localStorage).
+
+## Música
+
+As músicas são originais e sintetizadas na hora com Web Audio, sem arquivos de áudio. Cada cômodo tem a sua, e ela troca junto com o cômodo:
+
+| Música | Onde toca | Estilo |
+| --- | --- | --- |
+| Passeio na sala | Sala | Ukulele dedilhado e sininho, dó maior, 112 bpm, balançadinho |
+| Soneca no quarto | Quarto | Valsa de caixinha de música, fá maior, 84 bpm |
+| Cozinha animada | Cozinha | Marimba saltitante, baixo beliscado, bloquinho de madeira e panelinha, sol maior, 126 bpm |
+| Bolhas no banheiro | Banheiro | Flautinha, acordes no contratempo e bolhas, ré maior, 100 bpm |
+| Domingo de sol | Tela de abertura | Bossa nova com violão, vibrafone e chocalho, 132 bpm |
+| Rabinho abanando | Coragem do pão do queijo | Videogame antigo, lá maior, 138 bpm |
+
+As músicas dos cômodos têm duas partes (de 30 a 38 segundos no total) e se repetem durante a fase. Enquanto o Krug está corajoso, a música do cômodo fica em silêncio e volta depois, do ponto em que estava. Na pausa, na fase concluída, nos intervalos e no fim de jogo, a música para. A chave "Música" no menu de pausa (ou a tecla M no computador) liga e desliga só a música; o botão de som desliga tudo. A escolha fica salva no aparelho.
+

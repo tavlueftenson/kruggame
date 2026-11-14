@@ -3269,12 +3269,55 @@
   // ---------------------------------------------------------------------------
   let last = performance.now();
   let frameDt = 0;
+  // ---------------------------------------------------------------------------
+  // Música: uma por cômodo, a da abertura e a da coragem (music.js)
+  // ---------------------------------------------------------------------------
+  const Music = {
+    on: store.get('music', true),
+    vol: 0.3,                 // a música fica por baixo dos efeitos e latidos
+    players: {},
+    /** O que deveria estar tocando agora: { música: volume relativo }. */
+    wanted() {
+      if (!this.on || !Snd.on || !Snd.ac || Snd.ac.state !== 'running' || !window.KRUG_SONGS) return {};
+      if (S.mode === 'start') return { abertura: 1 };
+      if ((S.mode === 'play' || S.mode === 'intro') && L) {
+        const brave = S.mode === 'play' && K.braveT > 0;
+        const w = { [L.theme.key]: brave ? 0 : 1 }; // a música do cômodo continua, em silêncio
+        if (brave) w.coragem = 1;
+        return w;
+      }
+      return {};
+    },
+    update() {
+      const want = this.wanted();
+      for (const [k, p] of Object.entries(this.players)) {
+        if (!(k in want)) { p.stop(k === 'coragem' ? 0.3 : 0.6); delete this.players[k]; }
+      }
+      for (const [k, v] of Object.entries(want)) {
+        let p = this.players[k];
+        if (!p) {
+          if (v <= 0) continue;
+          p = this.players[k] = KrugMusic.Player(Snd.ac, Snd.ac.destination, KRUG_SONGS[k], this.vol * v, k === 'coragem' ? 0.15 : 0.8);
+        } else {
+          p.fade(this.vol * v, v > 0 ? 0.6 : 0.25);
+        }
+        p.tick();
+      }
+    },
+    set(on) {
+      this.on = on;
+      store.set('music', on);
+      $('#opt-music').checked = on;
+    },
+  };
+
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     frameDt = S.mode === 'play' ? dt : 0;
     update(dt);
     render();
+    try { Music.update(); } catch (e) { /* música é enfeite: nunca derruba o jogo */ }
     requestAnimationFrame(frame);
   }
 
@@ -3561,6 +3604,12 @@
   }
 
   window.addEventListener('keydown', (e) => {
+    if (!e.shiftKey && !e.ctrlKey && !e.metaKey && (e.key === 'm' || e.key === 'M')) {
+      Snd.init();
+      Music.set(!Music.on);
+      banner(Music.on ? 'Música ligada' : 'Música desligada', '', 1.2);
+      return;
+    }
     if (e.shiftKey && (e.key === 'N' || e.key === 'n')) {
       e.preventDefault();
       Snd.init();
@@ -3624,8 +3673,12 @@
   if (isTouch) {
     CFG.minTile = 30;
     document.documentElement.classList.add('touch');
-    $('#controls-hint').innerHTML = 'Deslize o dedo na tela para mover o Krug: ele rola reto até bater na parede, e dá para virar sem tirar o dedo. <strong>Para parar, dê um toque rápido no labirinto.</strong> Se preferir botões, ligue o direcional no menu de pausa.';
+    $('#controls-hint').innerHTML = 'Deslize o dedo na tela para mover o Krug: ele rola reto até bater na parede, e dá para virar sem tirar o dedo. <strong>Para parar, dê um toque rápido no labirinto.</strong> No menu de pausa dá para desligar a música e ligar o direcional, se preferir botões.';
   }
+
+  // Música: chave no menu de pausa (e tecla M no computador)
+  $('#opt-music').checked = Music.on;
+  $('#opt-music').addEventListener('change', () => { Snd.init(); Music.set($('#opt-music').checked); });
 
   // Direcional escondido por padrão; dá para ligar no menu de pausa
   const optDpad = $('#opt-dpad');
@@ -3739,5 +3792,5 @@
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (L) render(); });
 
   // Acesso para testes automatizados
-  window.__krug = { S, K, get L() { return L; }, input, stop, newGame, nextLevel, playCutscene, startDark, skipLevels, INTRO, beginPlay, buildLevel, CFG, drawCap, IMG, Snd };
+  window.__krug = { Music, S, K, get L() { return L; }, input, stop, newGame, nextLevel, playCutscene, startDark, skipLevels, INTRO, beginPlay, buildLevel, CFG, drawCap, IMG, Snd };
 })();

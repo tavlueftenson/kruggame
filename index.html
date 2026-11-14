@@ -82,7 +82,7 @@
           <li><canvas data-icon="bath"></canvas><span><strong>Má banho</strong> dá medo: o Krug perde uma patinha e volta ao começo. A partir da fase 7, alguns andam.</span></li>
         </ul>
         <p class="hint">Cada fase vale até 3 estrelas: chegar à tigela, comer todas as popocas e comer todos os pães do queijo. A cada 5 fases o Krug muda de cômodo. Ele recupera uma patinha aos 4 mil pontos, depois aos 10 mil, 18 mil, 28 mil, e assim por diante, com metas cada vez mais distantes.</p>
-        <p class="hint" id="controls-hint">Use as setas do teclado (ou W A S D). A tampinha rola reto até bater na parede; escolha outra direção e ela vira assim que puder. A barra de espaço para o Krug.</p>
+        <p class="hint" id="controls-hint">Use as setas do teclado (ou W A S D). A tampinha rola reto até bater na parede; escolha outra direção e ela vira assim que puder. A barra de espaço para o Krug, e a tecla M liga e desliga a música.</p>
       </div>
       <footer class="start-foot">
         <button class="btn" id="btn-play">Jogar</button>
@@ -139,6 +139,11 @@
       <h2>Pausado</h2>
       <button class="btn" id="btn-resume">Continuar</button>
       <button class="btn secondary" id="btn-restart">Recomeçar do zero</button>
+      <label class="toggle always" for="opt-music">
+        <input type="checkbox" id="opt-music">
+        <span class="switch" aria-hidden="true"></span>
+        <span>Música</span>
+      </label>
       <label class="toggle" for="opt-dpad">
         <input type="checkbox" id="opt-dpad">
         <span class="switch" aria-hidden="true"></span>
@@ -147,6 +152,7 @@
     </div>
   </section>
 
+  <script src="music.js"></script>
   <script src="game.js"></script>
 </body>
 </html>
